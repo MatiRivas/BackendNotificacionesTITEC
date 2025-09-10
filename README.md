@@ -1,5 +1,5 @@
 # Roles e Integrantes
-- **Back end y Servicios**: Vicente Miralles
+- **Back End y Servicios**: Vicente Miralles
 - **Base de Datos**: Matias Rivas-Carlos Gaete
 - **Seguridad**: Maximiliano Casas
 - **UX/UI**: Nataniel Palacios
