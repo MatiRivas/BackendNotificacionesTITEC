@@ -1,0 +1,92 @@
+Issue 1 - Dependencia con Pagos
+
+Microservicio solicitante: Notificaciones
+Microservicio proveedor: Pagos
+
+Descripcion:
+Necesitamos enviar notificaciones cuando un pago sea
+aprobado o rechazado o se reembolsan.
+
+ENDPOINT requerido:
+
+Metodo: GET
+
+Ruta: /pagos/{id}
+
+Parametros de entrada
+Nombre          | Tipo     | Descripcion
+idPago            String     Identificador de la publicacion
+
+
+Respuesta esperada:
+
+{
+       "idPago":" P789",
+       "estado":"aprobado",
+	
+}
+
+Squad responsable: Pagos
+
+
+Issue 2 - Dependencia con Reseñas y Reputacion
+
+Microservicio solicitante: Notificaciones
+Microservicio proveedor: Reseñas y Reputacion
+
+Descripcion:
+Requerimos notificar a vendedores cuando reciben una nueva reseña o valoración de sus productos.
+
+ENDPOINT requerido:
+
+Metodo: GET
+
+Ruta: /reseñas/{id}
+
+Parametros de entrada
+Nombre          | Tipo     | Descripcion
+idReseña          String     Identificador de la publicacion
+
+
+Respuesta esperada:
+
+{
+       "idReseña":" R321",
+       "calificacion": 4,
+       "comentario":"Buen producto",
+	
+}
+
+Squad responsable: Reseñas y Reputacion
+
+
+
+Issue 3 - Dependencia con Envios
+
+Microservicio solicitante: Notificaciones
+Microservicio proveedor: Envios
+
+Descripcion:
+Necesitamos enviar notificaciones a compradores 
+cuando el envio cambia de estado(ej. en camino, listo para retiro, entregado)
+
+ENDPOINT requerido:
+
+Metodo: GET
+
+Ruta: /envios/seguimiento/{id}
+
+Parametros de entrada
+Nombre          | Tipo     | Descripcion
+idEnvio          String     Identificador de la publicacion
+
+
+Respuesta esperada:
+
+{
+       "idEnvio":" R654",
+       "estado":"listo_para_retirar",
+	
+}
+
+Squad responsable: Envios

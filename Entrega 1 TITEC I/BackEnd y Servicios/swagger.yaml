@@ -1,0 +1,202 @@
+openapi: 3.0.0
+info:
+  title: Microservicio de Notificaciones
+  version: 1.0.0
+  description: >
+    API para gestionar notificaciones en la eShop.
+    Incluye servicios propios y dependencias de otros microservicios.
+
+servers:
+  - url: http://localhost:8080/api
+
+paths:
+  /notificaciones:
+    post:
+      summary: Crear una nueva notificación
+      description: Envía una notificación a un usuario o vendedor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                destinatario:
+                  type: string
+                  example: usuario123
+                tipo:
+                  type: string
+                  example: envio
+                mensaje:
+                  type: string
+                  example: Tu pedido está en camino
+      responses:
+        '201':
+          description: Notificación creada correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idNotificacion:
+                    type: string
+                    example: N001
+                  estado:
+                    type: string
+                    example: enviada
+
+  /notificaciones/{id}:
+    get:
+      summary: Consultar notificación por ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: N001
+      responses:
+        '200':
+          description: Datos de la notificación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idNotificacion:
+                    type: string
+                  destinatario:
+                    type: string
+                  mensaje:
+                    type: string
+                  estado:
+                    type: string
+
+  /notificaciones/usuario/{idUsuario}:
+    get:
+      summary: Listar notificaciones de un usuario
+      parameters:
+        - name: idUsuario
+          in: path
+          required: true
+          schema:
+            type: string
+          example: usuario123
+      responses:
+        '200':
+          description: Lista de notificaciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    idNotificacion:
+                      type: string
+                    mensaje:
+                      type: string
+                    estado:
+                      type: string
+
+  ##########################################################
+  # DEPENDENCIAS DE OTROS MICROSERVICIOS (issues documentadas)
+  ##########################################################
+
+  /ordenes/{id}:
+    get:
+      summary: Obtener estado de una orden (dependencia)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Datos de la orden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idOrden:
+                    type: string
+                  estado:
+                    type: string
+
+  /pagos/{id}:
+    get:
+      summary: Obtener estado de un pago (dependencia)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado del pago
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idPago:
+                    type: string
+                  estado:
+                    type: string
+
+  /envios/{id}:
+    get:
+      summary: Obtener estado de un envío (dependencia)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado del envío
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idEnvio:
+                    type: string
+                  estado:
+                    type: string
+
+  /mensajes/{idConversacion}:
+    get:
+      summary: Obtener último mensaje de una conversación (dependencia)
+      parameters:
+        - name: idConversacion
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Último mensaje
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idConversacion:
+                    type: string
+                  ultimoMensaje:
+                    type: object
+                    properties:
+                      idMensaje:
+                        type: string
+                      remitente:
+                        type: string
+                      contenido:
+                        type: string
+                      fecha:
+                        type: string
+                        format: date-time
