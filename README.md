@@ -1,8 +1,8 @@
 # Roles e Integrantes
-Back End y Servicios : Vicente Miralles
-Base de Datos : Matías Rivas , Carlos Gaete
-Seguridad/Gestión : Maximiliano Casas
-UX/UI : Nataniel Palacios
+**Back End y Servicios** : Vicente Miralles
+**Base de Datos** : Matías Rivas , Carlos Gaete
+**Seguridad/Gestión** : Maximiliano Casas
+**UX/UI** : Nataniel Palacios
 
 # Backend NestJS para GPI Template - Universidad de Valparaíso
 
