@@ -43,6 +43,10 @@ export class Notification {
   @Prop({ required: true, type: Number })
   id_plantilla: number; // FK a Plantillas
 
+  // ✅ EMBEDDING - Array de canales (reemplaza tabla intermedia)
+  @Prop({ type: [Number], required: true })
+  channel_ids: number[]; // Array de IDs de canales
+
   @Prop({ 
     required: true, 
     enum: NotificationStatus,
