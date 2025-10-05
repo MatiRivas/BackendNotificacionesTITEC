@@ -23,9 +23,6 @@ export class Template {
   id_Plantilla: number;
 
   @Prop({ required: true, type: Number })
-  id_canal: number; // FK a Tipo_Canales
-
-  @Prop({ required: true, type: Number })
   id_tipo_plantilla: number; // FK a Tipo_Plantillas
 
   @Prop({ required: true, type: String, maxlength: 500 })
