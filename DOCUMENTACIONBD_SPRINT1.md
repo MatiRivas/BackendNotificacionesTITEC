@@ -11,17 +11,18 @@
 ### Tipos de Canales
 | id_canal | tipo_canal |
 |----------|------------|
-| 1 | in-app |
-| 2 | email |
+| 1 | email |
+| 2 | SMS |
+| 3 | push |
+| 4 | WhatsApp |
 
 ### Tipos de Plantillas
 | id_tipo_plantilla | tipo_plantilla |
 |-------------------|----------------|
 | 1 | Transaccional |
-| 2 | Confirmacion |
-| 3 | Actualizacion_Estado |
-| 4 | Promocional |
-| 5 | Recordatorio |
+| 2 | Promocional |
+| 3 | Sistema |
+| 4 | Recordatorio |
 
 ---
 
