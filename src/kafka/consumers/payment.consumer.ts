@@ -4,7 +4,7 @@ import { plainToClass } from 'class-transformer';
 import { validate } from 'class-validator';
 import { KafkaService } from '../kafka.service';
 import { NotificationsService } from '../../notificaciones/notifications.service';
-import { PaymentConfirmedEventDto, PaymentFailedEventDto } from '../dto/payment-event.dto';
+import { PaymentConfirmedEventDto, PaymentFailedEventDto, PaymentRejectedEventDto } from '../dto/payment-event.dto';
 
 @Injectable()
 export class PaymentConsumer implements OnModuleInit {
@@ -23,6 +23,12 @@ export class PaymentConsumer implements OnModuleInit {
     await this.kafkaService.subscribeToTopic(
       kafkaConfig.topics.paymentsConfirmed,
       this.handlePaymentConfirmed.bind(this),
+    );
+
+    // Suscribirse a eventos de pagos rechazados - HDU6
+    await this.kafkaService.subscribeToTopic(
+      kafkaConfig.topics.paymentsRejected,
+      this.handlePaymentRejected.bind(this),
     );
 
     this.logger.log('Payment Consumer initialized and subscribed to topics');
@@ -122,6 +128,60 @@ export class PaymentConsumer implements OnModuleInit {
       this.logger.log(`Successfully processed payment failed event: ${paymentEvent.paymentId}`);
     } catch (error) {
       this.logger.error('Error processing payment failed event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 🚫 Maneja eventos de pago rechazado - HDU6
+   * Notifica al comprador cuando su pago es rechazado con opciones de reintento
+   */
+  private async handlePaymentRejected(message: any, topic: string, partition: number) {
+    try {
+      const eventData = JSON.parse(message.value.toString());
+      this.logger.log(
+        `Processing payment rejected event: ${eventData.paymentId} for order: ${eventData.orderId}, ` +
+        `reason: ${eventData.rejectionReason}`
+      );
+
+      // Validar el DTO
+      const paymentEvent = plainToClass(PaymentRejectedEventDto, eventData);
+      const errors = await validate(paymentEvent);
+
+      if (errors.length > 0) {
+        this.logger.error('Payment rejected event validation failed:', errors);
+        throw new Error(`Invalid payment rejected event data: ${errors.map(e => e.toString()).join(', ')}`);
+      }
+
+      // HDU6: Notificar al comprador sobre el pago rechazado
+      // "Máximo 5 segundos de latencia" - usar canal rápido con fallback
+      await this.notificationsService.createNotificationFromEvent({
+        eventType: 'payment_rejected',
+        eventData: {
+          ...paymentEvent,
+          // Incluir datos adicionales para el template
+          rejectionReason: paymentEvent.rejectionReason,
+          rejectionCode: paymentEvent.rejectionCode,
+          retryAllowed: paymentEvent.retryAllowed || 'yes',
+          retryUrl: `/orders/${paymentEvent.orderId}/payment`,
+          supportUrl: '/support/payment-issues'
+        },
+        recipients: [{
+          userId: paymentEvent.buyerId,
+          email: paymentEvent.buyerEmail,
+          role: 'buyer'
+        }],
+        templateType: 'payment_rejected_buyer',
+        channels: ['email', 'internal'], // Email primero, internal como fallback
+        priority: 'high', // Prioridad alta para cumplir latencia de 5 segundos
+      });
+
+      this.logger.log(
+        `Successfully processed payment rejected event: ${paymentEvent.paymentId}, ` +
+        `notified buyer: ${paymentEvent.buyerId}`
+      );
+    } catch (error) {
+      this.logger.error('Error processing payment rejected event:', error);
       throw error;
     }
   }

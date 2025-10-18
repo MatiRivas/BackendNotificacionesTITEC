@@ -17,9 +17,18 @@ export default registerAs('kafka', () => ({
     password: process.env.KAFKA_PASSWORD,
   } : undefined,
   topics: {
+    // Temas existentes (Sprint 1)
     ordersCreated: process.env.KAFKA_TOPIC_ORDERS_CREATED || 'orders.created',
     ordersStatusChanged: process.env.KAFKA_TOPIC_ORDERS_STATUS || 'orders.status_changed',
     paymentsConfirmed: process.env.KAFKA_TOPIC_PAYMENTS || 'payments.confirmed',
     ordersShipped: process.env.KAFKA_TOPIC_SHIPPING || 'orders.shipped',
+    
+    // Nuevos temas (Sprint 2) - HDU6, HDU8
+    paymentsRejected: process.env.KAFKA_TOPIC_PAYMENTS_REJECTED || 'payments.rejected',
+    paymentIssues: process.env.KAFKA_TOPIC_PAYMENT_ISSUES || 'payments.issues',
+    refundsProcessed: process.env.KAFKA_TOPIC_REFUNDS || 'refunds.processed',
+    disputesOpened: process.env.KAFKA_TOPIC_DISPUTES || 'disputes.opened',
+    chargebacksReceived: process.env.KAFKA_TOPIC_CHARGEBACKS || 'chargebacks.received',
+    fraudDetected: process.env.KAFKA_TOPIC_FRAUD || 'fraud.detected',
   },
 }));
