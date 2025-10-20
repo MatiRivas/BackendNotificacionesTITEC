@@ -2,6 +2,39 @@ import { IsArray, IsBoolean, IsObject, IsOptional, IsString, IsEnum, ValidateNes
 import { Type } from 'class-transformer';
 
 /**
+ * 📝 DTO para configuraciones específicas de cada canal
+ * DEBE IR PRIMERO porque otros DTOs lo referencian
+ */
+export class ChannelSettingsDto {
+  @IsOptional()
+  @IsObject()
+  email?: {
+    address?: string;
+    verified?: boolean;
+  };
+
+  @IsOptional()
+  @IsObject()
+  sms?: {
+    phoneNumber?: string;
+    verified?: boolean;
+  };
+
+  @IsOptional()
+  @IsObject()
+  push?: {
+    deviceTokens?: string[];
+    enabled?: boolean;
+  };
+
+  @IsOptional()
+  @IsObject()
+  internal?: {
+    enabled?: boolean;
+  };
+}
+
+/**
  * 📝 DTO para actualizar preferencias de usuario
  * Implementa HDU7: Configuración de canales de notificación
  */
@@ -37,38 +70,6 @@ export class UserPreferencesResponseDto {
   channelSettings: ChannelSettingsDto;
   notificationTypes: string[];
   lastUpdated: Date;
-}
-
-/**
- * 📝 DTO para configuraciones específicas de cada canal
- */
-export class ChannelSettingsDto {
-  @IsOptional()
-  @IsObject()
-  email?: {
-    address?: string;
-    verified?: boolean;
-  };
-
-  @IsOptional()
-  @IsObject()
-  sms?: {
-    phoneNumber?: string;
-    verified?: boolean;
-  };
-
-  @IsOptional()
-  @IsObject()
-  push?: {
-    deviceTokens?: string[];
-    enabled?: boolean;
-  };
-
-  @IsOptional()
-  @IsObject()
-  internal?: {
-    enabled?: boolean;
-  };
 }
 
 /**

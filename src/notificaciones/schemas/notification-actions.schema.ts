@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Schema as MongooseSchema } from 'mongoose';
 
 export type NotificationActionsDocument = NotificationActions & Document;
 
@@ -44,7 +44,10 @@ export class NotificationActions {
   @Prop({ default: null })
   completedAt: Date;
 
-  @Prop({ default: {} })
+  @Prop({ 
+    type: MongooseSchema.Types.Mixed, 
+    default: {} 
+  })
   metadata: {
     orderId?: string;
     paymentId?: string;
