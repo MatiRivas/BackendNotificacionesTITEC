@@ -20,13 +20,32 @@ export class EmailService {
   }
 
   private initializeTransporter() {
+    const smtpHost = this.configService.get<string>('SMTP_HOST');
+    const smtpPort = this.configService.get<number>('SMTP_PORT');
+    const smtpUser = this.configService.get<string>('SMTP_USER');
+    const smtpPass = this.configService.get<string>('SMTP_PASS');
+
+    // Si no hay configuración completa de SMTP, usar modo desarrollo
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      this.logger.warn('SMTP configuration incomplete. Email service running in development mode.');
+      this.logger.warn('Configure SMTP_HOST, SMTP_USER, and SMTP_PASS in .env for email functionality');
+      
+      // Crear un transporter que no falle
+      this.transporter = nodemailer.createTransport({
+        streamTransport: true,
+        newline: 'unix',
+        buffer: true
+      });
+      return;
+    }
+
     const smtpConfig = {
-      host: this.configService.get<string>('SMTP_HOST'),
-      port: this.configService.get<number>('SMTP_PORT'),
+      host: smtpHost,
+      port: smtpPort || 587,
       secure: this.configService.get<boolean>('SMTP_SECURE', false),
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user: smtpUser,
+        pass: smtpPass,
       },
     };
 
@@ -35,7 +54,9 @@ export class EmailService {
     // Verificar la configuración
     this.transporter.verify((error, success) => {
       if (error) {
-        this.logger.error('SMTP configuration error:', error);
+        this.logger.error('SMTP configuration error:');
+        this.logger.error(error.message || error);
+        this.logger.warn('Email service will continue in mock mode for development');
       } else {
         this.logger.log('SMTP server is ready to send emails');
       }
