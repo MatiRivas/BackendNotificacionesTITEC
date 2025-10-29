@@ -11,8 +11,52 @@ export class NotificationsController {
     private readonly emailService: EmailService,
   ) {}
 
+  // ===== NUEVOS ENDPOINTS PARA BD ACTUAL =====
+
+  @Get('/templates')
+  async getAllTemplates() {
+    return this.notificationsService.getAllTemplates();
+  }
+
+  @Get('/channels')
+  async getAllChannels() {
+    return this.notificationsService.getAllChannels();
+  }
+
+  @Get('/template-types')
+  async getAllTemplateTypes() {
+    return this.notificationsService.getAllTemplateTypes();
+  }
+
+  @Post('/create')
+  async createNotification(@Body() body: {
+    id_emisor: number;
+    id_receptor: number;
+    id_plantilla: number;
+    channel_ids: number[];
+  }) {
+    return this.notificationsService.createNotification(body);
+  }
+
   @Get('/user/:userId')
   async getUserNotifications(
+    @Param('userId') userId: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    const userIdNumber = parseInt(userId);
+    return this.notificationsService.getNotificationsByUserId(userIdNumber, page, limit);
+  }
+
+  @Get('/stats')
+  async getStats() {
+    return this.notificationsService.getBasicNotificationStats();
+  }
+
+  // ===== ENDPOINTS EXISTENTES (para compatibilidad) =====
+
+  @Get('/user-history/:userId')
+  async getUserNotificationsHistory(
     @Param('userId') userId: string,
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
@@ -20,8 +64,8 @@ export class NotificationsController {
     return this.notificationsService.getNotificationsByUser(userId, page, limit);
   }
 
-  @Get('/stats')
-  async getStats() {
+  @Get('/history-stats')
+  async getHistoryStats() {
     return this.notificationsService.getNotificationStats();
   }
 

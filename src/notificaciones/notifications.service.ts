@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
+
+// Schemas existentes
 import { 
   NotificationHistory, 
   NotificationHistoryDocument, 
@@ -9,6 +11,13 @@ import {
   NotificationChannel,
   NotificationPriority 
 } from './schemas/notification-history.schema';
+
+// Nuevos schemas para BD actual
+import { Notification, NotificationDocument } from './schemas/notification.schema';
+import { Template, TemplateDocument } from './schemas/template.schema';
+import { ChannelType, ChannelTypeDocument } from './schemas/channel-type.schema';
+import { TemplateType, TemplateTypeDocument } from './schemas/template-type.schema';
+
 import { CreateNotificationFromEventDto } from './dto/notification-context.dto';
 import { EmailService } from './channels/email.service';
 
@@ -18,7 +27,15 @@ export class NotificationsService {
 
   constructor(
     @InjectModel(NotificationHistory.name)
-    private notificationModel: Model<NotificationHistoryDocument>,
+    private notificationHistoryModel: Model<NotificationHistoryDocument>,
+    @InjectModel(Notification.name)
+    private notificationModel: Model<NotificationDocument>,
+    @InjectModel(Template.name)
+    private templateModel: Model<TemplateDocument>,
+    @InjectModel(ChannelType.name)
+    private channelTypeModel: Model<ChannelTypeDocument>,
+    @InjectModel(TemplateType.name)
+    private templateTypeModel: Model<TemplateTypeDocument>,
     private emailService: EmailService,
   ) {}
 
@@ -42,7 +59,7 @@ export class NotificationsService {
           );
 
           // Crear registro en la base de datos
-          const notification = new this.notificationModel({
+          const notification = new this.notificationHistoryModel({
             eventId,
             eventType: dto.eventType,
             userId: recipient.userId,
@@ -142,7 +159,7 @@ export class NotificationsService {
     status: NotificationHistoryStatus,
     extraData: any = {}
   ) {
-    await this.notificationModel.findByIdAndUpdate(
+    await this.notificationHistoryModel.findByIdAndUpdate(
       notificationId,
       { 
         status,
@@ -192,7 +209,7 @@ export class NotificationsService {
   async getNotificationsByUser(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
     
-    return this.notificationModel
+    return this.notificationHistoryModel
       .find({ userId })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -201,7 +218,7 @@ export class NotificationsService {
   }
 
   async getNotificationStats() {
-    const stats = await this.notificationModel.aggregate([
+    const stats = await this.notificationHistoryModel.aggregate([
       {
         $group: {
           _id: '$status',
@@ -210,7 +227,7 @@ export class NotificationsService {
       }
     ]);
 
-    const channelStats = await this.notificationModel.aggregate([
+    const channelStats = await this.notificationHistoryModel.aggregate([
       {
         $group: {
           _id: '$channel',
@@ -222,12 +239,12 @@ export class NotificationsService {
     return {
       byStatus: stats,
       byChannel: channelStats,
-      total: await this.notificationModel.countDocuments()
+      total: await this.notificationHistoryModel.countDocuments()
     };
   }
 
   async retryFailedNotifications() {
-    const failedNotifications = await this.notificationModel
+    const failedNotifications = await this.notificationHistoryModel
       .find({ 
         status: NotificationHistoryStatus.FAILED,
         attempts: { $lt: 3 } // Máximo 3 intentos
@@ -239,5 +256,82 @@ export class NotificationsService {
     for (const notification of failedNotifications) {
       await this.sendNotificationAsync(notification);
     }
+  }
+
+  // ===== NUEVOS MÉTODOS PARA LA BD ACTUAL =====
+  
+  // Consultar todas las plantillas
+  async getAllTemplates() {
+    this.logger.log('🔍 Buscando plantillas en colección: plantillas');
+    const templates = await this.templateModel.find().exec();
+    this.logger.log(`📋 Plantillas encontradas: ${templates.length}`);
+    return templates;
+  }
+
+  // Consultar todos los canales
+  async getAllChannels() {
+    return this.channelTypeModel.find().exec();
+  }
+
+  // Consultar todos los tipos de plantillas
+  async getAllTemplateTypes() {
+    return this.templateTypeModel.find().exec();
+  }
+
+  // Crear una nueva notificación
+  async createNotification(data: {
+    id_emisor: number;
+    id_receptor: number;
+    id_plantilla: number;
+    channel_ids: number[];
+  }) {
+    // Generar nuevo ID
+    const lastNotification = await this.notificationModel
+      .findOne()
+      .sort({ id_notificacion: -1 })
+      .exec();
+    
+    const newId = lastNotification ? lastNotification.id_notificacion + 1 : 1;
+
+    const notification = new this.notificationModel({
+      id_notificacion: newId,
+      fecha_hora: new Date(),
+      id_emisor: data.id_emisor,
+      id_receptor: data.id_receptor,
+      id_plantilla: data.id_plantilla,
+      channel_ids: data.channel_ids,
+      estado: 'pendiente'
+    });
+
+    return notification.save();
+  }
+
+  // Consultar notificaciones por usuario (actualizado para nueva BD)
+  async getNotificationsByUserId(userId: number, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+    
+    return this.notificationModel
+      .find({ id_receptor: userId })
+      .sort({ fecha_hora: -1 })
+      .skip(skip)
+      .limit(limit)
+      .exec();
+  }
+
+  // Estadísticas básicas de notificaciones
+  async getBasicNotificationStats() {
+    const stats = await this.notificationModel.aggregate([
+      {
+        $group: {
+          _id: '$estado',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    return {
+      byStatus: stats,
+      total: await this.notificationModel.countDocuments()
+    };
   }
 }
