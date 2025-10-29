@@ -6,7 +6,7 @@ export interface TemplateDocument extends Template, Document {
 }
 
 @Schema({
-  collection: 'plantillas',
+  collection: 'plantillas', // ⬅️ Verificar este nombre
   timestamps: true,
   toJSON: {
     virtuals: true,
