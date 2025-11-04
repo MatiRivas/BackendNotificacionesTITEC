@@ -57,23 +57,39 @@
 
 ## 📝 Estructura de Notificación
 
+**Estructura del Documento:**
 ```json
 {
+  "_id": ObjectId,
+  "id_notificacion": Number,
+  "fecha_hora": Date,
+  "id_emisor": String,
+  "id_receptor": String,
+  "id_plantilla": Number,
+  "channel_ids": [Number],
+  "estado": String,
+  "metadata": Object
+}
+```
+
+**Ejemplo de Documento:**
+```json
+{
+  "_id": {
+    "$oid": "68e1d80db23776c4d887869f"
+  },
   "id_notificacion": 1,
-  "fecha_hora": "2024-10-04T16:30:00.000Z",
+  "fecha_hora": "2024-11-04T16:30:00.000Z",
   "id_emisor": "user-abc-123",
-  "id_receptor": "user-def-456", 
-  "id_plantilla": 1,
+  "id_receptor": "user-def-456",
+  "id_plantilla": 6,
   "channel_ids": [1, 2],
   "estado": "pendiente",
   "metadata": {
     "monto": 15000,
     "tipo_problema": "rechazado",
     "accion_requerida": "reintentar_pago",
-    "motivo_cancelacion": "Sin stock",
-    "link_soporte": "https://ayuda.tienda.com",
-    "orden_id": "ORD-12345",
-    "estado_pedido": "preparando"
+    "orden_id": "ORD-12345"
   }
 }
 ```
@@ -93,3 +109,121 @@
 
 **Otros:**
 - Campo extensible `[key: string]: any` para futuras HDU
+
+---
+
+## 📋 Modelo de Datos - Estructuras JSON
+
+### Colección: `tipo_canales`
+
+**Estructura del Documento:**
+```json
+{
+  "_id": ObjectId,
+  "id_canal": Number,
+  "tipo_canal": String
+}
+```
+
+**Ejemplo de Documento:**
+```json
+{
+  "_id": {
+    "$oid": "68e17c2ab23776c4d8878694"
+  },
+  "id_canal": 1,
+  "tipo_canal": "email"
+}
+```
+
+---
+
+### Colección: `tipo_canales`
+
+**Estructura del Documento:**
+```json
+{
+  "_id": ObjectId,
+  "id_tipo_plantilla": Number,
+  "tipo_plantilla": String
+}
+```
+
+**Ejemplo de Documento:**
+```json
+{
+  "_id": {
+    "$oid": "68e17af5b23776c4d8878675"
+  },
+  "id_tipo_plantilla": 1,
+  "tipo_plantilla": "Transaccional"
+}
+```
+
+---
+
+### Colección: `plantillas`
+
+**Estructura del Documento:**
+```json
+{
+  "_id": ObjectId,
+  "id_Plantilla": Number,
+  "id_tipo_plantilla": Number,
+  "descripción_base": String,
+  "asunto_base": String
+}
+```
+
+**Ejemplo de Documento:**
+```json
+{
+  "_id": {
+    "$oid": "68e1d80db23776c4d887869a"
+  },
+  "id_Plantilla": 1,
+  "id_tipo_plantilla": 1,
+  "descripción_base": "{comprador} realizó una compra de {producto}",
+  "asunto_base": "Nueva venta realizada"
+}
+```
+
+---
+
+### Colección: `notificaciones`
+
+**Estructura del Documento:**
+```json
+{
+  "_id": ObjectId,
+  "id_notificacion": Number,
+  "fecha_hora": Date,
+  "id_emisor": String,
+  "id_receptor": String,
+  "id_plantilla": Number,
+  "channel_ids": [Number],
+  "estado": String,
+  "metadata": Object
+}
+```
+
+**Ejemplo de Documento:**
+```json
+{
+  "_id": {
+    "$oid": "68e1d80db23776c4d887869f"
+  },
+  "id_notificacion": 1,
+  "fecha_hora": "2024-11-04T16:30:00.000Z",
+  "id_emisor": "user-abc-123",
+  "id_receptor": "user-def-456",
+  "id_plantilla": 6,
+  "channel_ids": [1, 2],
+  "estado": "pendiente",
+  "metadata": {
+    "monto": 15000,
+    "tipo_problema": "rechazado",
+    "accion_requerida": "reintentar_pago",
+    "orden_id": "ORD-12345"
+  }
+}
