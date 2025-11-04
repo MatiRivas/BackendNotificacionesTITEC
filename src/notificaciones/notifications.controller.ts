@@ -13,6 +13,17 @@ export class NotificationsController {
 
   // ===== NUEVOS ENDPOINTS PARA BD ACTUAL =====
 
+  @Post('/test-create')
+  async testCreateNotification(@Body() body: {
+    id_emisor: string;
+    id_receptor: string;
+    id_plantilla: number;
+    channel_ids: number[];
+  }) {
+    this.logger.log('Testing notification creation...');
+    return this.notificationsService.createSimpleNotification(body);
+  }
+
   @Get('/templates')
   async getAllTemplates() {
     return this.notificationsService.getAllTemplates();

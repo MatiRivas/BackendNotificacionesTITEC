@@ -15,8 +15,8 @@ export enum NotificationStatus {
 }
 
 @Schema({
-  collection: 'notificaciones', // ⬅️ Nombre exacto de tu colección en Compass
-  timestamps: true,
+  collection: 'notificaciones', // ⬅️ Usa la colección existente
+  timestamps: false, // Tu BD no tiene createdAt/updatedAt automáticos
   toJSON: {
     virtuals: true,
     transform: (_: any, ret: any) => {
@@ -28,24 +28,24 @@ export enum NotificationStatus {
   },
 })
 export class Notification {
-  @Prop({ required: true, type: Number }) // INT en tu diccionario
+  @Prop({ required: true, type: Number })
   id_notificacion: number;
 
-  @Prop({ required: true, type: Date }) // TIMESTAMP
+  @Prop({ required: true, type: Date })
   fecha_hora: Date;
 
-  @Prop({ required: true, type: Number })
-  id_emisor: number; // Usuario que envía
+  @Prop({ required: true, type: String })
+  id_emisor: string; // UUID del microservicio Users
 
-  @Prop({ required: true, type: Number })
-  id_receptor: number; // Usuario que recibe
+  @Prop({ required: true, type: String })
+  id_receptor: string; // UUID del microservicio Users
 
   @Prop({ required: true, type: Number })
   id_plantilla: number; // FK a Plantillas
 
-  // ✅ EMBEDDING - Array de canales (reemplaza tabla intermedia)
+  // Array de IDs de canales (adaptado a tu estructura)
   @Prop({ type: [Number], required: true })
-  channel_ids: number[]; // Array de IDs de canales
+  channel_ids: number[];
 
   @Prop({ 
     required: true, 
@@ -53,6 +53,22 @@ export class Notification {
     type: String 
   })
   estado: NotificationStatus;
+
+  // ⬇️ ===== NUEVO CAMPO PARA SPRINT 2 ===== ⬇️
+  @Prop({ 
+    type: Object, 
+    default: {} 
+  })
+  metadata: {
+    // Para notificaciones de pago
+    monto?: number;
+    tipo_problema?: string;        // 'rechazado', 'reembolso', 'disputa'
+    accion_requerida?: string;     // 'reintentar_pago', 'subir_evidencia', 'contactar_soporte'
+
+    
+    // Extensible para futuros casos de uso
+    [key: string]: any;
+  };
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
