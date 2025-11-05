@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 import { NotificationsService } from './notifications.service';
@@ -23,7 +23,7 @@ import { ChannelManagerService } from './services/channel-manager.service';
 @Module({
   imports: [
     ConfigModule,
-    ExternalModule,
+    forwardRef(() => ExternalModule),
     MongooseModule.forFeature([
       { name: Notification.name, schema: NotificationSchema },
       { name: Template.name, schema: TemplateSchema },
