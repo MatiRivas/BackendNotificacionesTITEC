@@ -64,6 +64,10 @@ export class Notification {
     monto?: number;
     tipo_problema?: string;        // 'rechazado', 'reembolso', 'disputa'
     accion_requerida?: string;     // 'reintentar_pago', 'subir_evidencia', 'contactar_soporte'
+    motivo_cancelacion?: string;
+    link_soporte?: string; 
+    orden_id?: string;              // ✅ Para referencia al microservicio de órdenes
+    estado_pedido?: string;        // ✅ Referencia para el microservicio de órdenes también
 
     
     // Extensible para futuros casos de uso
