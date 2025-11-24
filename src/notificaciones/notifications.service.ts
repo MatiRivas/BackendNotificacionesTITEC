@@ -207,14 +207,35 @@ export class NotificationsService {
   }
 
   /**
-   * Obtener notificaciones de un usuario
+   * Obtener notificaciones de un usuario con información de plantilla
    */
-  async getUserNotifications(userId: string, limit = 20): Promise<Notification[]> {
-    return this.notificationModel
+  async getUserNotifications(userId: string, limit = 20): Promise<any[]> {
+    const notifications = await this.notificationModel
       .find({ id_receptor: userId })
       .sort({ fecha_hora: -1 })
       .limit(limit)
       .exec();
+
+    // Enriquecer con información de plantillas
+    const enrichedNotifications = [];
+    
+    for (const notification of notifications) {
+      const template = await this.templateModel.findOne({ 
+        id_Plantilla: notification.id_plantilla 
+      }).exec();
+      
+      const enriched = {
+        ...notification.toObject(),
+        plantilla: template ? {
+          asunto_base: template.asunto_base,
+          descripcion_base: template.descripción_base
+        } : null
+      };
+      
+      enrichedNotifications.push(enriched);
+    }
+
+    return enrichedNotifications;
   }
 
   /**
@@ -346,6 +367,64 @@ export class NotificationsService {
 
   async getNotificationStats() {
     return this.getStats();
+  }
+
+  /**
+   * Marcar una notificación como leída
+   */
+  async markNotificationAsRead(notificationId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const result = await this.notificationModel.findByIdAndUpdate(
+        notificationId,
+        { estado: 'leido' },
+        { new: true }
+      ).exec();
+
+      if (!result) {
+        return {
+          success: false,
+          message: 'Notificación no encontrada'
+        };
+      }
+
+      this.logger.log(`Notification ${notificationId} marked as read`);
+      return {
+        success: true,
+        message: 'Notificación marcada como leída'
+      };
+    } catch (error) {
+      this.logger.error(`Error marking notification as read:`, error);
+      return {
+        success: false,
+        message: 'Error al marcar la notificación como leída'
+      };
+    }
+  }
+
+  /**
+   * Marcar múltiples notificaciones como leídas
+   */
+  async markMultipleNotificationsAsRead(notificationIds: string[]): Promise<{ success: boolean; message: string; updated: number }> {
+    try {
+      const result = await this.notificationModel.updateMany(
+        { _id: { $in: notificationIds } },
+        { estado: 'leido' }
+      ).exec();
+
+      this.logger.log(`${result.modifiedCount} notifications marked as read`);
+      return {
+        success: true,
+        message: `${result.modifiedCount} notificaciones marcadas como leídas`,
+        updated: result.modifiedCount
+      };
+    } catch (error) {
+      this.logger.error(`Error marking multiple notifications as read:`, error);
+      return {
+        success: false,
+        message: 'Error al marcar las notificaciones como leídas',
+        updated: 0
+      };
+    }
   }
 
   async retryFailedNotifications() {

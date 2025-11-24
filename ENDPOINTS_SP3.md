@@ -88,7 +88,7 @@ Reintenta enviar todas las notificaciones con estado "fallido".
 ### 4. Obtener Notificaciones de Usuario
 **`GET /user/:userId`**
 
-Obtiene las notificaciones de un usuario específico con paginación.
+Obtiene las notificaciones de un usuario específico con información de la plantilla base.
 
 **Parámetros:**
 - `userId` (path): ID del usuario
@@ -99,25 +99,21 @@ Obtiene las notificaciones de un usuario específico con paginación.
 
 **Salida:**
 ```json
-{
-  "notifications": [
-    {
-      "id_notificacion": 45,
-      "fecha_hora": "2025-11-05T01:30:00.000Z",
-      "id_emisor": 1,
-      "id_receptor": 123,
-      "id_plantilla": 1,
-      "channel_ids": [1, 3],
-      "estado": "leido"
+[
+  {
+    "id_notificacion": 45,
+    "fecha_hora": "2025-11-05T01:30:00.000Z",
+    "id_emisor": 1,
+    "id_receptor": 123,
+    "id_plantilla": 1,
+    "channel_ids": [1, 3],
+    "estado": "leido",
+    "plantilla": {
+      "asunto_base": "Confirmación de Pedido",
+      "descripcion_base": "Tu pedido #{{orden_id}} ha sido confirmado y está siendo procesado."
     }
-  ],
-  "pagination": {
-    "currentPage": 1,
-    "totalPages": 3,
-    "totalItems": 25,
-    "itemsPerPage": 10
   }
-}
+]
 ```
 
 ---
@@ -228,9 +224,75 @@ Obtiene estadísticas detalladas del historial de notificaciones.
 
 ---
 
+## 📖 GESTIÓN DE ESTADO DE NOTIFICACIONES
+
+### 8. Marcar Notificación como Leída
+**`POST /notificacion_leida/:notificationId`**
+
+Marca una notificación específica como leída.
+
+**Parámetros:**
+- `notificationId` (path): ID de la notificación (ObjectId de MongoDB)
+
+**Ejemplo:** `POST /notificacion_leida/64a7b8c9e1234567890abcde`
+
+**Salida:**
+```json
+{
+  "success": true,
+  "message": "Notificación marcada como leída"
+}
+```
+
+**Salida de Error:**
+```json
+{
+  "success": false,
+  "message": "Notificación no encontrada"
+}
+```
+
+---
+
+### 9. Marcar Múltiples Notificaciones como Leídas
+**`POST /notificaciones_leidas`**
+
+Marca múltiples notificaciones como leídas en una sola operación.
+
+**Entrada:**
+```json
+{
+  "notificationIds": [
+    "64a7b8c9e1234567890abcde",
+    "64a7b8c9e1234567890abcdf",
+    "64a7b8c9e1234567890abce0"
+  ]
+}
+```
+
+**Salida:**
+```json
+{
+  "success": true,
+  "message": "3 notificaciones marcadas como leídas",
+  "updated": 3
+}
+```
+
+**Salida de Error:**
+```json
+{
+  "success": false,
+  "message": "Se requiere un array de IDs de notificaciones",
+  "updated": 0
+}
+```
+
+---
+
 ## ⚙️ CONFIGURACIÓN
 
-### 8. Obtener Plantillas
+### 10. Obtener Plantillas
 **`GET /templates`**
 
 Lista todas las plantillas de notificación disponibles.
@@ -263,7 +325,7 @@ Lista todas las plantillas de notificación disponibles.
 
 ---
 
-### 9. Obtener Canales
+### 11. Obtener Canales
 **`GET /channels`**
 
 Lista todos los canales de notificación disponibles.
@@ -296,7 +358,7 @@ Lista todos los canales de notificación disponibles.
 
 ---
 
-### 10. Obtener Tipos de Plantillas
+### 12. Obtener Tipos de Plantilla
 **`GET /template-types`**
 
 Lista todos los tipos de plantillas disponibles.
@@ -328,7 +390,7 @@ Lista todos los tipos de plantillas disponibles.
 
 ## 🎧 MONITOREO
 
-### 11. Estado del Listener
+### 13. Estado del Listener
 **`GET /listener-status`**
 
 Obtiene el estado de los Change Streams y estadísticas del sistema.
@@ -372,7 +434,7 @@ Obtiene el estado de los Change Streams y estadísticas del sistema.
 
 ## 🔧 TESTING
 
-### 12. Verificar Estado del Email
+### 14. Verificar Estado del Email
 **`GET /health/email`**
 
 Verifica el estado del servicio de email.
@@ -390,7 +452,7 @@ Verifica el estado del servicio de email.
 
 ---
 
-### 13. Enviar Email de Prueba
+### 15. Enviar Email de Prueba
 **`POST /test/email`**
 
 Envía un email de prueba al destinatario especificado.

@@ -74,6 +74,28 @@ export class NotificationsController {
     return this.notificationsService.getBasicNotificationStats();
   }
 
+  @Post('/notificacion_leida/:notificationId')
+  async markNotificationAsRead(
+    @Param('notificationId') notificationId: string
+  ) {
+    return this.notificationsService.markNotificationAsRead(notificationId);
+  }
+
+  @Post('/notificaciones_leidas')
+  async markMultipleNotificationsAsRead(
+    @Body() body: { notificationIds: string[] }
+  ) {
+    if (!body.notificationIds || !Array.isArray(body.notificationIds)) {
+      return {
+        success: false,
+        message: 'Se requiere un array de IDs de notificaciones',
+        updated: 0
+      };
+    }
+    
+    return this.notificationsService.markMultipleNotificationsAsRead(body.notificationIds);
+  }
+
   // ===== NUEVO ENDPOINT PARA CHANGE STREAMS =====
 
   @Get('/listener-status')
