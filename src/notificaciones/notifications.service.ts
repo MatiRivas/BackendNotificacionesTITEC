@@ -14,6 +14,24 @@ import { UsersApiService } from '../external/users-api.service';
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
+  // Mapeo de ID de plantilla a tipo de notificación para el frontend
+  private readonly PLANTILLA_TO_TYPE = {
+    1: 'order_created',        // Nueva venta (seller)
+    2: 'order_created',        // Compra confirmada (buyer)
+    3: 'order_status_changed', // Actualización de pedido
+    4: 'order_shipped',        // Pedido enviado
+    5: 'order_canceled',       // Pedido cancelado (genérico)
+    6: 'payment_issue',        // Problema de pago
+    7: 'payment_confirmed',    // Pago confirmado (buyer)
+    8: 'payment_status',       // Pago rechazado (buyer)
+    9: 'payment_confirmed',    // Pago recibido (seller)
+    10: 'order_canceled',      // Venta cancelada por vendedor
+    11: 'order_canceled',      // Compra cancelada por comprador
+    12: 'order_ready_to_ship', // Listo para despacho
+    13: 'message_received',    // Nuevo mensaje
+    14: 'product_edited'       // Producto editado
+  };
+
   constructor(
     @InjectModel(Notification.name)
     private notificationModel: Model<NotificationDocument>,
@@ -59,7 +77,7 @@ export class NotificationsService {
       // 3. Generar ID único de notificación
       const nextId = await this.getNextNotificationId();
 
-      // 4. Crear notificación SIN cache (más simple)
+      // 4. Crear notificación con metadata enriquecida
       const notification = new this.notificationModel({
         id_notificacion: nextId,
         fecha_hora: new Date(),
@@ -68,6 +86,7 @@ export class NotificationsService {
         id_plantilla: data.id_plantilla,
         channel_ids: data.channel_ids,
         estado: 'pendiente',
+        metadata: data.context || {}, // Guardar metadata del evento
       });
 
       const saved = await notification.save();
@@ -207,7 +226,7 @@ export class NotificationsService {
   }
 
   /**
-   * Obtener notificaciones de un usuario con información de plantilla
+   * Obtener notificaciones de un usuario con formato enriquecido para frontend
    */
   async getUserNotifications(userId: string, limit = 20): Promise<any[]> {
     const notifications = await this.notificationModel
@@ -216,7 +235,7 @@ export class NotificationsService {
       .limit(limit)
       .exec();
 
-    // Enriquecer con información de plantillas
+    // Enriquecer con información procesada de plantillas
     const enrichedNotifications = [];
     
     for (const notification of notifications) {
@@ -224,18 +243,105 @@ export class NotificationsService {
         id_Plantilla: notification.id_plantilla 
       }).exec();
       
+      const notifObj = notification.toObject();
+      
+      // Procesar plantilla con datos del metadata
+      const title = template?.asunto_base ? 
+        this.processTemplate(template.asunto_base, notifObj.metadata || {}) : 
+        'Notificación';
+      
+      const message = template?.descripción_base ? 
+        this.processTemplate(template.descripción_base, notifObj.metadata || {}) : 
+        '';
+      
       const enriched = {
-        ...notification.toObject(),
-        plantilla: template ? {
-          asunto_base: template.asunto_base,
-          descripcion_base: template.descripción_base
-        } : null
+        id_notificacion: notifObj.id_notificacion,
+        fecha_hora: notifObj.fecha_hora,
+        id_emisor: notifObj.id_emisor,
+        id_receptor: notifObj.id_receptor,
+        id_plantilla: notifObj.id_plantilla,
+        channel_ids: notifObj.channel_ids,
+        estado: notifObj.estado,
+        type: this.PLANTILLA_TO_TYPE[notifObj.id_plantilla] || 'notification',
+        title: title,
+        message: message,
+        metadata: this.enrichMetadata(notifObj.metadata || {}, notifObj.id_plantilla)
       };
       
       enrichedNotifications.push(enriched);
     }
 
     return enrichedNotifications;
+  }
+
+  /**
+   * Procesar plantilla reemplazando variables con valores reales
+   */
+  private processTemplate(template: string, data: any): string {
+    let processed = template;
+    
+    // Mapeo de variables a campos del metadata
+    const variableMap = {
+      '{comprador}': data.buyerName || data.comprador || 'Usuario',
+      '{vendedor}': data.vendorName || data.sellerName || data.vendedor || 'Vendedor',
+      '{producto}': data.productName || data.producto || 'Producto',
+      '{orden}': data.orderId || data.orden_id || data.orden || 'N/A',
+      '{monto}': data.amount ? `$${data.amount.toLocaleString('es-CL')}` : (data.monto ? `$${data.monto.toLocaleString('es-CL')}` : '$0'),
+      '{estado}': data.estadoPedido || data.status || data.estado || 'Pendiente',
+      '{usuario}': data.userName || data.usuario || 'Usuario',
+      '{motivo}': data.cancellationReason || data.rejectionReason || data.motivo || 'No especificado',
+      '{direccion}': data.deliveryAddress || data.direccion || '',
+      '{telefono}': data.buyerPhone || data.sellerPhone || data.telefono || '',
+      '{mensaje}': data.messagePreview || data.mensaje || '',
+      '{remitente}': data.senderName || data.remitente || 'Usuario',
+      '{campos}': data.changedFields ? data.changedFields.join(', ') : 'varios campos'
+    };
+    
+    // Reemplazar cada variable
+    for (const [variable, value] of Object.entries(variableMap)) {
+      processed = processed.replace(new RegExp(variable.replace(/[{}]/g, '\\$&'), 'g'), String(value));
+    }
+    
+    return processed;
+  }
+
+  /**
+   * Enriquecer metadata con campos específicos según el tipo de notificación
+   */
+  private enrichMetadata(metadata: any, plantillaId: number): any {
+    const type = this.PLANTILLA_TO_TYPE[plantillaId];
+    const enriched: any = { ...metadata };
+    
+    // Agregar actionUrl si no existe
+    if (!enriched.actionUrl && enriched.orderId) {
+      enriched.actionUrl = `/orders/${enriched.orderId}`;
+    }
+    
+    // Formatear montos como números
+    if (enriched.amount && typeof enriched.amount === 'string') {
+      enriched.amount = parseFloat(enriched.amount);
+    }
+    if (enriched.monto && typeof enriched.monto === 'string') {
+      enriched.amount = parseFloat(enriched.monto);
+      delete enriched.monto;
+    }
+    
+    // Agregar currency si no existe
+    if (enriched.amount && !enriched.currency) {
+      enriched.currency = 'CLP';
+    }
+    
+    // Para payment_status, asegurar que existe paymentOutcome
+    if (type === 'payment_status' && !enriched.paymentOutcome) {
+      enriched.paymentOutcome = enriched.tipo_problema === 'rechazado' ? 'rejected' : 'pending';
+    }
+    
+    // Para order_canceled, asegurar helpCenterUrl
+    if (type === 'order_canceled' && !enriched.helpCenterUrl) {
+      enriched.helpCenterUrl = '/help/cancellation';
+    }
+    
+    return enriched;
   }
 
   /**
@@ -300,15 +406,23 @@ export class NotificationsService {
     
     for (const recipient of data.recipients) {
       try {
-        // Mapear el tipo de evento a ID de plantilla
-        const plantillaId = this.mapEventToTemplate(data.eventType);
+        // Determinar plantilla según el rol del destinatario
+        let plantillaId;
+        if (recipient.role === 'seller' || recipient.role === 'vendedor') {
+          plantillaId = this.mapEventToTemplateSeller(data.eventType);
+        } else {
+          plantillaId = this.mapEventToTemplateBuyer(data.eventType);
+        }
+        
+        // Construir metadata enriquecida con datos del evento
+        const enrichedMetadata = this.buildMetadataFromEvent(data.eventData, recipient.role);
         
         const notification = await this.createSimpleNotification({
-          id_emisor: 'system', // Para eventos del sistema
+          id_emisor: 'system',
           id_receptor: recipient.userId,
           id_plantilla: plantillaId,
-          channel_ids: [1, 2], // Email y SMS por defecto para eventos
-          context: data.templateData
+          channel_ids: [1, 2],
+          context: { ...data.templateData, ...enrichedMetadata }
         });
         
         notifications.push(notification);
@@ -320,7 +434,69 @@ export class NotificationsService {
     return notifications;
   }
 
-  // Mapeo de eventos a plantillas
+  /**
+   * Construir metadata desde eventData
+   */
+  private buildMetadataFromEvent(eventData: any, role?: string): any {
+    if (!eventData) return {};
+    
+    const metadata: any = {
+      orderId: eventData.orderId || eventData.orden_id,
+      amount: eventData.totalAmount || eventData.amount || eventData.monto,
+      currency: 'CLP'
+    };
+    
+    // Datos de orden
+    if (eventData.buyerId) metadata.buyerId = eventData.buyerId;
+    if (eventData.sellerId) metadata.sellerId = eventData.sellerId;
+    if (eventData.buyerEmail) metadata.buyerEmail = eventData.buyerEmail;
+    if (eventData.sellerEmail) metadata.sellerEmail = eventData.sellerEmail;
+    
+    // Nombres (necesitarían venir del evento o consultarse)
+    if (eventData.buyerName) metadata.buyerName = eventData.buyerName;
+    if (eventData.sellerName || eventData.vendorName) metadata.vendorName = eventData.sellerName || eventData.vendorName;
+    
+    // Productos
+    if (eventData.products && eventData.products.length > 0) {
+      metadata.productName = eventData.products[0].productName;
+      metadata.productId = eventData.products[0].productId;
+    }
+    if (eventData.productName) metadata.productName = eventData.productName;
+    
+    // Estados y razones
+    if (eventData.newStatus || eventData.status) metadata.estadoPedido = eventData.newStatus || eventData.status;
+    if (eventData.cancellationReason || eventData.motivo) metadata.cancellationReason = eventData.cancellationReason || eventData.motivo;
+    if (eventData.rejectionReason) metadata.rejectionReason = eventData.rejectionReason;
+    
+    // Pagos
+    if (eventData.paymentMethod) metadata.paymentMethod = eventData.paymentMethod;
+    if (eventData.issueType || eventData.tipo_problema) metadata.issueType = eventData.issueType || eventData.tipo_problema;
+    
+    // Envíos
+    if (eventData.trackingNumber) metadata.trackingNumber = eventData.trackingNumber;
+    if (eventData.carrier) metadata.carrier = eventData.carrier;
+    if (eventData.estimatedDelivery) metadata.estimatedDelivery = eventData.estimatedDelivery;
+    if (eventData.shippedAt) metadata.shippedAt = eventData.shippedAt;
+    if (eventData.deliveryAddress) metadata.deliveryAddress = eventData.deliveryAddress;
+    if (eventData.buyerPhone) metadata.buyerPhone = eventData.buyerPhone;
+    
+    // Mensajes
+    if (eventData.senderName) metadata.senderName = eventData.senderName;
+    if (eventData.messagePreview) metadata.messagePreview = eventData.messagePreview;
+    if (eventData.conversationId) metadata.conversationId = eventData.conversationId;
+    
+    // Productos editados
+    if (eventData.changedFields) metadata.changedFields = eventData.changedFields;
+    
+    // Action URL
+    if (metadata.orderId) {
+      metadata.actionUrl = `/orders/${metadata.orderId}`;
+    }
+    
+    return metadata;
+  }
+
+  // Mapeo de eventos a plantillas (deprecated - usar métodos específicos por rol)
   private mapEventToTemplate(eventType: string): number {
     const mapping = {
       'order_created': 1,
@@ -334,6 +510,38 @@ export class NotificationsService {
     };
     
     return mapping[eventType] || 1; // Default a plantilla 1
+  }
+
+  // Mapeo de eventos a plantillas para COMPRADORES
+  private mapEventToTemplateBuyer(eventType: string): number {
+    const mapping = {
+      'order_created': 2,        // Tu pedido fue creado
+      'order_confirmed': 2,      // Tu pedido fue confirmado
+      'order_status_changed': 3, // Estado de tu pedido cambió
+      'order_shipped': 4,        // Tu pedido fue enviado
+      'order_cancelled': 5,      // Tu pedido fue cancelado
+      'payment_confirmed': 7,    // Tu pago fue confirmado
+      'payment_rejected': 8,     // Tu pago fue rechazado
+      'payment_issue': 6,        // Problema con tu pago
+    };
+    
+    return mapping[eventType] || 2; // Default a plantilla 2
+  }
+
+  // Mapeo de eventos a plantillas para VENDEDORES
+  private mapEventToTemplateSeller(eventType: string): number {
+    const mapping = {
+      'order_created': 1,        // Nueva venta creada
+      'order_confirmed': 9,      // Venta confirmada
+      'order_status_changed': 10, // Estado de venta cambió
+      'order_shipped': 11,       // Producto enviado
+      'order_cancelled': 12,     // Venta cancelada
+      'payment_confirmed': 9,    // Pago recibido
+      'payment_rejected': 6,     // Problema con pago de venta
+      'payment_issue': 6,        // Problema con pago de venta
+    };
+    
+    return mapping[eventType] || 1; // Default a plantilla 1 (nueva venta)
   }
 
   // Métodos para el controller
