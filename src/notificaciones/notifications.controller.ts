@@ -21,6 +21,7 @@ export class NotificationsController {
     id_receptor: string;
     id_plantilla: number;
     channel_ids: number[];
+    context?: any;
   }) {
     this.logger.log('Testing notification creation...');
     return this.notificationsService.createSimpleNotification(body);

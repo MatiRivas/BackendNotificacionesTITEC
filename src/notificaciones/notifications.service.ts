@@ -77,7 +77,10 @@ export class NotificationsService {
       // 3. Generar ID único de notificación
       const nextId = await this.getNextNotificationId();
 
-      // 4. Crear notificación con metadata enriquecida
+      // 4. Normalizar metadata (eliminar duplicados) antes de guardar
+      const normalizedMetadata = data.context ? this.buildMetadataFromEvent(data.context) : {};
+
+      // 5. Crear notificación con metadata normalizada
       const notification = new this.notificationModel({
         id_notificacion: nextId,
         fecha_hora: new Date(),
@@ -86,7 +89,7 @@ export class NotificationsService {
         id_plantilla: data.id_plantilla,
         channel_ids: data.channel_ids,
         estado: 'pendiente',
-        metadata: data.context || {}, // Guardar metadata del evento
+        metadata: normalizedMetadata, // Guardar metadata normalizada
       });
 
       const saved = await notification.save();
@@ -283,7 +286,7 @@ export class NotificationsService {
     // Mapeo de variables a campos del metadata
     const variableMap = {
       '{comprador}': data.buyerName || data.comprador || 'Usuario',
-      '{vendedor}': data.vendorName || data.sellerName || data.vendedor || 'Vendedor',
+      '{vendedor}': data.sellerName || data.vendorName || data.vendedor || 'Vendedor',
       '{producto}': data.productName || data.producto || 'Producto',
       '{orden}': data.orderId || data.orden_id || data.orden || 'N/A',
       '{monto}': data.amount ? `$${data.amount.toLocaleString('es-CL')}` : (data.monto ? `$${data.monto.toLocaleString('es-CL')}` : '$0'),
@@ -317,13 +320,27 @@ export class NotificationsService {
       enriched.actionUrl = `/orders/${enriched.orderId}`;
     }
     
-    // Formatear montos como números
+    // Formatear montos como números y eliminar duplicados (monto, totalAmount)
     if (enriched.amount && typeof enriched.amount === 'string') {
       enriched.amount = parseFloat(enriched.amount);
     }
-    if (enriched.monto && typeof enriched.monto === 'string') {
-      enriched.amount = parseFloat(enriched.monto);
+    
+    // Normalizar monto -> amount (evitar duplicado)
+    if (enriched.monto) {
+      if (typeof enriched.monto === 'string') {
+        enriched.amount = parseFloat(enriched.monto);
+      } else {
+        enriched.amount = enriched.monto;
+      }
       delete enriched.monto;
+    }
+    
+    // Normalizar totalAmount -> amount (evitar duplicado)
+    if (enriched.totalAmount && !enriched.amount) {
+      enriched.amount = enriched.totalAmount;
+    }
+    if (enriched.totalAmount) {
+      delete enriched.totalAmount;
     }
     
     // Agregar currency si no existe
@@ -440,11 +457,20 @@ export class NotificationsService {
   private buildMetadataFromEvent(eventData: any, role?: string): any {
     if (!eventData) return {};
     
-    const metadata: any = {
-      orderId: eventData.orderId || eventData.orden_id,
-      amount: eventData.totalAmount || eventData.amount || eventData.monto,
-      currency: 'CLP'
-    };
+    // Normalizar orderId (evitar duplicado orden_id)
+    const normalizedOrderId = eventData.orderId || eventData.orden_id;
+    
+    // Normalizar amount (evitar duplicados totalAmount, amount, monto)
+    const normalizedAmount = eventData.totalAmount || eventData.amount || eventData.monto;
+    
+    const metadata: any = {};
+    
+    // Solo agregar si existe
+    if (normalizedOrderId) metadata.orderId = normalizedOrderId;
+    if (normalizedAmount) {
+      metadata.amount = normalizedAmount;
+      metadata.currency = 'CLP';
+    }
     
     // Datos de orden
     if (eventData.buyerId) metadata.buyerId = eventData.buyerId;
@@ -452,41 +478,76 @@ export class NotificationsService {
     if (eventData.buyerEmail) metadata.buyerEmail = eventData.buyerEmail;
     if (eventData.sellerEmail) metadata.sellerEmail = eventData.sellerEmail;
     
-    // Nombres (necesitarían venir del evento o consultarse)
-    if (eventData.buyerName) metadata.buyerName = eventData.buyerName;
-    if (eventData.sellerName || eventData.vendorName) metadata.vendorName = eventData.sellerName || eventData.vendorName;
+    // Nombres - normalizar a un solo campo cada uno
+    if (eventData.buyerName || eventData.comprador) {
+      metadata.buyerName = eventData.buyerName || eventData.comprador;
+    }
     
-    // Productos
+    // Usar solo sellerName (evitar duplicado con vendorName)
+    if (eventData.sellerName || eventData.vendorName || eventData.vendedor) {
+      metadata.sellerName = eventData.sellerName || eventData.vendorName || eventData.vendedor;
+    }
+    
+    // Usuario genérico para mensajes (evitar duplicado userName/usuario)
+    if (eventData.userName || eventData.usuario) {
+      metadata.userName = eventData.userName || eventData.usuario;
+    }
+    
+    // Productos - normalizar productName (evitar duplicado producto)
     if (eventData.products && eventData.products.length > 0) {
       metadata.productName = eventData.products[0].productName;
       metadata.productId = eventData.products[0].productId;
     }
-    if (eventData.productName) metadata.productName = eventData.productName;
+    if (eventData.productName || eventData.producto) {
+      metadata.productName = eventData.productName || eventData.producto;
+    }
+    if (eventData.productId) metadata.productId = eventData.productId;
     
-    // Estados y razones
-    if (eventData.newStatus || eventData.status) metadata.estadoPedido = eventData.newStatus || eventData.status;
-    if (eventData.cancellationReason || eventData.motivo) metadata.cancellationReason = eventData.cancellationReason || eventData.motivo;
+    // Estados - normalizar estadoPedido (evitar duplicado status/estado)
+    if (eventData.newStatus || eventData.status || eventData.estado) {
+      metadata.estadoPedido = eventData.newStatus || eventData.status || eventData.estado;
+    }
+    
+    // Razones de cancelación - normalizar cancellationReason (evitar duplicado motivo)
+    if (eventData.cancellationReason || eventData.motivo) {
+      metadata.cancellationReason = eventData.cancellationReason || eventData.motivo;
+    }
+    
     if (eventData.rejectionReason) metadata.rejectionReason = eventData.rejectionReason;
     
-    // Pagos
+    // Pagos - normalizar issueType (evitar duplicado tipo_problema)
     if (eventData.paymentMethod) metadata.paymentMethod = eventData.paymentMethod;
-    if (eventData.issueType || eventData.tipo_problema) metadata.issueType = eventData.issueType || eventData.tipo_problema;
+    if (eventData.issueType || eventData.tipo_problema) {
+      metadata.issueType = eventData.issueType || eventData.tipo_problema;
+    }
     
     // Envíos
     if (eventData.trackingNumber) metadata.trackingNumber = eventData.trackingNumber;
     if (eventData.carrier) metadata.carrier = eventData.carrier;
     if (eventData.estimatedDelivery) metadata.estimatedDelivery = eventData.estimatedDelivery;
     if (eventData.shippedAt) metadata.shippedAt = eventData.shippedAt;
-    if (eventData.deliveryAddress) metadata.deliveryAddress = eventData.deliveryAddress;
-    if (eventData.buyerPhone) metadata.buyerPhone = eventData.buyerPhone;
+    if (eventData.deliveryAddress || eventData.direccion) {
+      metadata.deliveryAddress = eventData.deliveryAddress || eventData.direccion;
+    }
+    if (eventData.buyerPhone || eventData.telefono) {
+      metadata.buyerPhone = eventData.buyerPhone || eventData.telefono;
+    }
     
-    // Mensajes
-    if (eventData.senderName) metadata.senderName = eventData.senderName;
-    if (eventData.messagePreview) metadata.messagePreview = eventData.messagePreview;
+    // Mensajes - normalizar messagePreview (evitar duplicado mensaje)
+    if (eventData.senderName || eventData.remitente) {
+      metadata.senderName = eventData.senderName || eventData.remitente;
+    }
+    if (eventData.messagePreview || eventData.mensaje) {
+      metadata.messagePreview = eventData.messagePreview || eventData.mensaje;
+    }
     if (eventData.conversationId) metadata.conversationId = eventData.conversationId;
     
-    // Productos editados (HDU4 - Sprint 4)
-    if (eventData.changedFields) metadata.changedFields = eventData.changedFields;
+    // Productos editados (HDU4 - Sprint 4) - normalizar changedFields (evitar duplicado campos)
+    if (eventData.changedFields || eventData.campos) {
+      // Si viene como string separado por comas, convertir a array
+      const fields = eventData.changedFields || eventData.campos;
+      metadata.changedFields = Array.isArray(fields) ? fields : fields.split(',').map(f => f.trim());
+    }
     if (eventData.oldPrice !== undefined) metadata.oldPrice = eventData.oldPrice;
     if (eventData.newPrice !== undefined) metadata.newPrice = eventData.newPrice;
     if (eventData.oldStock !== undefined) metadata.oldStock = eventData.oldStock;
