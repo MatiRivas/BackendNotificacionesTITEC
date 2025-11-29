@@ -153,41 +153,6 @@ KAFKA_RETRIES=8
 KAFKA_TOPIC_PRODUCTS_EDITED=products.edited
 ```
 
-#### 🔔 Microservicio de Notificaciones
-
-```env
-# Conexión a Kafka
-KAFKA_BROKERS=localhost:9092
-KAFKA_CLIENT_ID=notifications-service
-KAFKA_GROUP_ID=notifications-group
-
-# Configuración de conexión
-KAFKA_CONNECTION_TIMEOUT=3000
-KAFKA_REQUEST_TIMEOUT=30000
-KAFKA_INITIAL_RETRY_TIME=100
-KAFKA_RETRIES=8
-
-# Topics que consume (todos los anteriores)
-KAFKA_TOPIC_ORDERS_CREATED=orders.created
-KAFKA_TOPIC_ORDERS_STATUS=orders.status_changed
-KAFKA_TOPIC_ORDERS_SHIPPED=orders.shipped
-KAFKA_TOPIC_PAYMENTS_CONFIRMED=payments.confirmed
-KAFKA_TOPIC_PAYMENTS_REJECTED=payments.rejected
-KAFKA_TOPIC_PAYMENTS_ISSUES=payments.issues
-KAFKA_TOPIC_MESSAGES_RECEIVED=messages.received
-KAFKA_TOPIC_PRODUCTS_EDITED=products.edited
-
-# Configuración adicional (específica de notificaciones)
-# Base de datos
-MONGODB_URI=mongodb://localhost:27017/notificaciones
-
-# Email
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=notificaciones@titec.com
-SMTP_PASS=tu-app-password
-```
 
 **Notas importantes:**
 - **KAFKA_BROKERS**: Dirección del servidor Kafka (misma para todos)
