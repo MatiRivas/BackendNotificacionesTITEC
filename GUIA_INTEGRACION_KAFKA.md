@@ -1063,97 +1063,7 @@ senderRole: 'BUYER'
 senderRole: 'customer'
 ```
 
----
 
-## 🚨 Troubleshooting
-
-### Problema 1: Eventos no se consumen
-
-**Síntomas**: Los eventos se publican pero no se crean notificaciones
-
-**Posibles causas**:
-1. Consumer no está registrado
-2. Topic incorrecto
-3. Kafka no está corriendo
-
-**Solución**:
-```bash
-# 1. Verificar que Kafka esté corriendo
-docker ps | grep kafka
-
-# 2. Verificar topics existentes
-kafka-topics --list --bootstrap-server localhost:9092
-
-# 3. Ver logs del servicio de notificaciones
-# Debe mostrar: "[OrderConsumer] Processing order created event: ORD-XXX"
-```
-
-### Problema 2: Campos duplicados en metadata
-
-**Síntomas**: La metadata contiene campos como `vendorName` y `sellerName`
-
-**Solución**: Los eventos ya están siendo normalizados automáticamente. Si ves duplicados:
-1. Verifica que estés usando la versión más reciente del servicio
-2. Los duplicados solo aparecen si el evento los incluye, pero solo uno se guarda
-
-### Problema 3: Plantilla incorrecta
-
-**Síntomas**: El comprador recibe notificaciones de vendedor o viceversa
-
-**Causa**: El campo `role` no está correcto en los recipients
-
-**Solución**:
-```typescript
-// ✅ Correcto
-recipients: [{
-  userId: buyer.id,
-  email: buyer.email,
-  role: 'buyer'  // Asegúrate que sea 'buyer' o 'seller'
-}]
-
-// ❌ Incorrecto
-recipients: [{
-  userId: buyer.id,
-  email: buyer.email,
-  role: 'customer'  // No existe
-}]
-```
-
-### Problema 4: Notificaciones no se envían por email
-
-**Síntomas**: Se crean pero no llegan emails
-
-**Posibles causas**:
-1. Configuración SMTP incorrecta
-2. Credenciales inválidas
-3. Puerto bloqueado
-
-**Solución**:
-```env
-# Verificar configuración en .env del servicio de notificaciones
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=tu-email@gmail.com
-SMTP_PASSWORD=tu-app-password  # No la contraseña normal
-```
-
-### Problema 5: Error de conexión a Kafka
-
-**Síntomas**: `Error: Connection refused` o `ECONNREFUSED`
-
-**Solución**:
-```bash
-# 1. Iniciar Kafka con Docker
-docker-compose up -d kafka zookeeper
-
-# 2. Esperar que Kafka esté listo (10-15 segundos)
-
-# 3. Verificar conectividad
-telnet localhost 9092
-```
-
----
 
 ## 📚 Recursos Adicionales
 
@@ -1164,12 +1074,6 @@ telnet localhost 9092
 - [Spring Kafka (Java)](https://spring.io/projects/spring-kafka)
 - [kafka-python](https://kafka-python.readthedocs.io/)
 
-### Archivos del Proyecto
-
-- `SPRINT4_IMPLEMENTATION.md` - Detalles técnicos del Sprint 4
-- `SPRINT4_RESUMEN.md` - Resumen ejecutivo
-- `INTEGRACION_SPRINT4.md` - Guía específica Sprint 4
-- `scripts/test-sprint4-events.ts` - Tests automatizados
 
 ### Contacto y Soporte
 
@@ -1207,10 +1111,4 @@ Usa este checklist para cada microservicio:
 - [ ] Retry logic para fallos temporales
 - [ ] Monitoring de eventos configurado
 - [ ] Documentación actualizada
-
----
-
-**Versión**: 1.0.0  
-**Fecha**: Noviembre 2025  
-**Última actualización**: 29/11/2025
 
