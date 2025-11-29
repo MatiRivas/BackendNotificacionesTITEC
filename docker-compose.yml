@@ -36,5 +36,22 @@ services:
     environment:
       - MONGO_INITDB_DATABASE=Notificaciones
 
+  notifications:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notifications
+    restart: unless-stopped
+    ports:
+      - "4500:4500"
+    depends_on:
+      - kafka
+      - mongodb
+    environment:
+      - PORT=4500
+      - KAFKA_BROKERS=kafka:4506
+      - MONGODB_URI=mongodb://mongodb:27017/Notificaciones
+      - NODE_ENV=production
+
 volumes:
   mongodb_data:
