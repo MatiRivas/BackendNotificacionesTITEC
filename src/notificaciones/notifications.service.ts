@@ -353,9 +353,22 @@ export class NotificationsService {
       enriched.paymentOutcome = enriched.tipo_problema === 'rechazado' ? 'rejected' : 'pending';
     }
     
-    // Para order_canceled, asegurar helpCenterUrl
-    if (type === 'order_canceled' && !enriched.helpCenterUrl) {
-      enriched.helpCenterUrl = '/help/cancellation';
+    // Para order_canceled, renombrar helpCenterUrl a link_soporte
+    if (type === 'order_canceled') {
+      if (!enriched.link_soporte && !enriched.helpCenterUrl) {
+        enriched.link_soporte = '/help/cancellation';
+      } else if (enriched.helpCenterUrl) {
+        enriched.link_soporte = enriched.helpCenterUrl;
+        delete enriched.helpCenterUrl;
+      }
+    }
+    
+    // Para payment_rejected (Plantilla 8), renombrar rejectionReason a razon
+    if (plantillaId === 8) {
+      if (enriched.rejectionReason) {
+        enriched.razon = enriched.rejectionReason;
+        delete enriched.rejectionReason;
+      }
     }
     
     return enriched;
@@ -472,9 +485,7 @@ export class NotificationsService {
       metadata.currency = 'CLP';
     }
     
-    // Datos de orden
-    if (eventData.buyerId) metadata.buyerId = eventData.buyerId;
-    if (eventData.sellerId) metadata.sellerId = eventData.sellerId;
+    // Datos de orden - NO incluir buyerId ni sellerId (ya están en id_emisor/id_receptor)
     if (eventData.buyerEmail) metadata.buyerEmail = eventData.buyerEmail;
     if (eventData.sellerEmail) metadata.sellerEmail = eventData.sellerEmail;
     
@@ -513,6 +524,7 @@ export class NotificationsService {
       metadata.cancellationReason = eventData.cancellationReason || eventData.motivo;
     }
     
+    // rejectionReason (se renombrará a 'razon' en enrichMetadata para plantilla 8)
     if (eventData.rejectionReason) metadata.rejectionReason = eventData.rejectionReason;
     
     // Pagos - normalizar issueType (evitar duplicado tipo_problema)
