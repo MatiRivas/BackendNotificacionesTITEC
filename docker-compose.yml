@@ -26,3 +26,15 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
 
+  mongodb:
+    image: mongo:latest
+    container_name: notificaciones-mongodb
+    ports:
+      - "5173:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=Notificaciones
+
+volumes:
+  mongodb_data:
