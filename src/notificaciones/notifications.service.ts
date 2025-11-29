@@ -665,12 +665,22 @@ export class NotificationsService {
   }
 
   /**
-   * Marcar una notificación como leída
+   * Marcar una notificación como leída usando id_notificacion
    */
-  async markNotificationAsRead(notificationId: string): Promise<{ success: boolean; message: string }> {
+  async markNotificationAsRead(notificationId: string): Promise<{ success: boolean; message: string; notificationId?: string }> {
     try {
-      const result = await this.notificationModel.findByIdAndUpdate(
-        notificationId,
+      // Convertir a número si es string
+      const id_notificacion = parseInt(notificationId);
+      
+      if (isNaN(id_notificacion)) {
+        return {
+          success: false,
+          message: 'ID de notificación inválido'
+        };
+      }
+
+      const result = await this.notificationModel.findOneAndUpdate(
+        { id_notificacion },
         { estado: 'leido' },
         { new: true }
       ).exec();
@@ -682,10 +692,11 @@ export class NotificationsService {
         };
       }
 
-      this.logger.log(`Notification ${notificationId} marked as read`);
+      this.logger.log(`Notification ${id_notificacion} marked as read`);
       return {
         success: true,
-        message: 'Notificación marcada como leída'
+        message: 'Notificación marcada como leída',
+        notificationId: notificationId
       };
     } catch (error) {
       this.logger.error(`Error marking notification as read:`, error);
@@ -697,12 +708,23 @@ export class NotificationsService {
   }
 
   /**
-   * Marcar múltiples notificaciones como leídas
+   * Marcar múltiples notificaciones como leídas usando id_notificacion
    */
   async markMultipleNotificationsAsRead(notificationIds: string[]): Promise<{ success: boolean; message: string; updated: number }> {
     try {
+      // Convertir todos los IDs a números
+      const ids = notificationIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+      
+      if (ids.length === 0) {
+        return {
+          success: false,
+          message: 'No se proporcionaron IDs válidos',
+          updated: 0
+        };
+      }
+
       const result = await this.notificationModel.updateMany(
-        { _id: { $in: notificationIds } },
+        { id_notificacion: { $in: ids } },
         { estado: 'leido' }
       ).exec();
 
