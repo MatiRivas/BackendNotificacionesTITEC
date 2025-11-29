@@ -485,12 +485,22 @@ export class NotificationsService {
     if (eventData.messagePreview) metadata.messagePreview = eventData.messagePreview;
     if (eventData.conversationId) metadata.conversationId = eventData.conversationId;
     
-    // Productos editados
+    // Productos editados (HDU4 - Sprint 4)
     if (eventData.changedFields) metadata.changedFields = eventData.changedFields;
+    if (eventData.oldPrice !== undefined) metadata.oldPrice = eventData.oldPrice;
+    if (eventData.newPrice !== undefined) metadata.newPrice = eventData.newPrice;
+    if (eventData.oldStock !== undefined) metadata.oldStock = eventData.oldStock;
+    if (eventData.newStock !== undefined) metadata.newStock = eventData.newStock;
+    if (eventData.oldDescription) metadata.oldDescription = eventData.oldDescription;
+    if (eventData.newDescription) metadata.newDescription = eventData.newDescription;
     
     // Action URL
     if (metadata.orderId) {
       metadata.actionUrl = `/orders/${metadata.orderId}`;
+    } else if (metadata.productId) {
+      metadata.actionUrl = `/products/${metadata.productId}`;
+    } else if (metadata.conversationId) {
+      metadata.actionUrl = `/messages/${metadata.conversationId}`;
     }
     
     return metadata;
@@ -523,6 +533,7 @@ export class NotificationsService {
       'payment_confirmed': 7,    // Tu pago fue confirmado
       'payment_rejected': 8,     // Tu pago fue rechazado
       'payment_issue': 6,        // Problema con tu pago
+      'message_received': 13,    // Nuevo mensaje (HDU3 - Sprint 4)
     };
     
     return mapping[eventType] || 2; // Default a plantilla 2
@@ -539,6 +550,9 @@ export class NotificationsService {
       'payment_confirmed': 9,    // Pago recibido
       'payment_rejected': 6,     // Problema con pago de venta
       'payment_issue': 6,        // Problema con pago de venta
+      'order_ready_to_ship': 12, // Listo para despacho (HDU2 - Sprint 4)
+      'message_received': 13,    // Nuevo mensaje (HDU3 - Sprint 4)
+      'product_edited': 14,      // Producto editado (HDU4 - Sprint 4)
     };
     
     return mapping[eventType] || 1; // Default a plantilla 1 (nueva venta)

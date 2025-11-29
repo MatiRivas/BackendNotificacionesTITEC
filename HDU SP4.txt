@@ -1,0 +1,14 @@
+1.-Como comprador, quiero poder marcar notificaciones como leídas/no leídas, para organizar mejor mi bandeja de notificaciones.
+2.- Como vendedor, quiero recibir una notificación cuando deba despachar un pedido, para no retrasar la entrega.
+Criterios de aceptación
+
+    El sistema debe generar una notificación al vendedor cuando el pedido tenga el estado “Listo para despacho”.
+    La notificación debe incluir la dirección de entrega y los datos de contacto del comprador.
+3.- Como vendedor/comprador quiero recibir una notificación cuando me llegue un nuevo mesaje, para responder lo antes posible al vendedor/comprador.
+Criterios de aceptación:
+
+    El sistema debe enviar una notificación en tiempo real al usuario (vendedor o comprador) cuando reciba un nuevo mensaje.
+4.- Como vendedor, quiero recibir una notificación de retroalimentación cuando edite con éxito un producto, para asegurarme de que se hicieron bien los cambios.
+Criterios de aceptación
+
+    La notificación debe incluir un resumen de los cambios realizados (precio anterior vs nuevo, stock actualizado, etc.) y la fecha/hora de la modificación.

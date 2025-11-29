@@ -23,7 +23,8 @@
     "demo": "ts-node scripts/demo-completa.ts",
     "demo:visual": "ts-node scripts/demo-visual.ts",
     "demo:endpoints": "ts-node scripts/demo-endpoints.ts",
-    "test:notifications": "ts-node scripts/test-all-notifications.ts"
+    "test:notifications": "ts-node scripts/test-all-notifications.ts",
+    "test:sprint4": "ts-node scripts/test-sprint4-events.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

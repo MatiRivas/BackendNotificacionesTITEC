@@ -30,5 +30,9 @@ export default registerAs('kafka', () => ({
     disputesOpened: process.env.KAFKA_TOPIC_DISPUTES || 'disputes.opened',
     chargebacksReceived: process.env.KAFKA_TOPIC_CHARGEBACKS || 'chargebacks.received',
     fraudDetected: process.env.KAFKA_TOPIC_FRAUD || 'fraud.detected',
+    
+    // Nuevos temas (Sprint 4) - HDU2, HDU3, HDU4
+    messagesReceived: process.env.KAFKA_TOPIC_MESSAGES_RECEIVED || 'messages.received',
+    productsEdited: process.env.KAFKA_TOPIC_PRODUCTS_EDITED || 'products.edited',
   },
 }));
