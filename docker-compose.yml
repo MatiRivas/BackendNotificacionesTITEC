@@ -48,10 +48,46 @@ services:
       - kafka
       - mongodb
     environment:
-      - PORT=4500
-      - KAFKA_BROKERS=kafka:4506
-      - MONGODB_URI=mongodb://mongodb:27017/Notificaciones
+      # Configuración básica
       - NODE_ENV=production
+      - PORT=4500
+      
+      # MongoDB
+      - MONGODB_URI=mongodb://mongodb:27017/Notificaciones
+      
+      # Kafka Brokers y Cliente
+      - KAFKA_BROKERS=kafka:4506
+      - KAFKA_CLIENT_ID=notifications-service
+      - KAFKA_GROUP_ID=notifications-group
+      - KAFKA_CONNECTION_TIMEOUT=3000
+      - KAFKA_REQUEST_TIMEOUT=30000
+      - KAFKA_INITIAL_RETRY_TIME=100
+      - KAFKA_RETRIES=8
+      
+      # Kafka Topics
+      - KAFKA_TOPIC_ORDERS_CREATED=orders.created
+      - KAFKA_TOPIC_ORDERS_STATUS=orders.status_changed
+      - KAFKA_TOPIC_PAYMENTS_CONFIRMED=payments.confirmed
+      - KAFKA_TOPIC_PAYMENTS_REJECTED=payments.rejected
+      - KAFKA_TOPIC_PAYMENT_ISSUES=payments.issues
+      - KAFKA_TOPIC_MESSAGES_RECEIVED=messages.received
+      - KAFKA_TOPIC_PRODUCTS_EDITED=products.edited
+      - KAFKA_TOPIC_SHIPPING=orders.shipped
+      - KAFKA_TOPIC_REFUNDS=refunds.processed
+      - KAFKA_TOPIC_DISPUTES=disputes.opened
+      - KAFKA_TOPIC_CHARGEBACKS=chargebacks.received
+      - KAFKA_TOPIC_FRAUD=fraud.detected
+      
+      # Canales por defecto
+      - DEFAULT_NOTIFICATION_CHANNELS=1,2
+      
+      # Email (Gmail SMTP)
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=465
+      - SMTP_SECURE=true
+      - SMTP_USER=mailernoti@gmail.com
+      - SMTP_PASS=vyubbfqbgsokuyus
+      - SMTP_FROM=mailernoti@gmail.com
 
 volumes:
   mongodb_data:
