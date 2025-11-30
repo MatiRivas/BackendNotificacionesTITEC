@@ -184,7 +184,10 @@ export class OrderConsumer implements OnModuleInit {
     // Notificar cancelación al vendedor
     await this.notificationsService.createNotificationFromEvent({
       eventType: 'order_cancelled',
-      eventData: statusEvent,
+      eventData: {
+        ...statusEvent,
+        helpCenterUrl: '/help/cancellation-seller'
+      },
       recipients: [{
         userId: statusEvent.sellerId,
         email: statusEvent.sellerEmail,
@@ -198,7 +201,10 @@ export class OrderConsumer implements OnModuleInit {
     // Notificar cancelación al comprador
     await this.notificationsService.createNotificationFromEvent({
       eventType: 'order_cancelled',
-      eventData: statusEvent,
+      eventData: {
+        ...statusEvent,
+        helpCenterUrl: '/help/cancellation-buyer'
+      },
       recipients: [{
         userId: statusEvent.buyerId,
         email: statusEvent.buyerEmail,

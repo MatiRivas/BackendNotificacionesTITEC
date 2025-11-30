@@ -288,22 +288,47 @@ export class NotificationsService {
       '{comprador}': data.buyerName || data.comprador || 'Usuario',
       '{vendedor}': data.sellerName || data.vendorName || data.vendedor || 'Vendedor',
       '{producto}': data.productName || data.producto || 'Producto',
+      '{nombre_producto}': data.productName || data.producto || 'Producto',
       '{orden}': data.orderId || data.orden_id || data.orden || 'N/A',
+      '{id_pedido}': data.orderId || data.orden_id || data.orden || 'N/A',
+      '{nombre_cliente}': data.buyerName || data.comprador || 'Usuario',
       '{monto}': data.amount ? `$${data.amount.toLocaleString('es-CL')}` : (data.monto ? `$${data.monto.toLocaleString('es-CL')}` : '$0'),
       '{estado}': data.estadoPedido || data.status || data.estado || 'Pendiente',
       '{usuario}': data.userName || data.usuario || 'Usuario',
       '{motivo}': data.cancellationReason || data.rejectionReason || data.motivo || 'No especificado',
+      '{motivo_cancelacion}': data.cancellationReason || data.motivo || 'No especificado',
+      '{tipo_problema}': data.rejectionReason || data.issueType || 'No especificado',
+      '{razon}': data.razon || data.rejectionReason || 'No especificado',
+      '{link_soporte}': data.link_soporte || data.helpCenterUrl || '/help',
       '{direccion}': data.deliveryAddress || data.direccion || '',
       '{telefono}': data.buyerPhone || data.sellerPhone || data.telefono || '',
       '{mensaje}': data.messagePreview || data.mensaje || '',
+      '{extracto}': data.messagePreview || data.mensaje || '',
       '{remitente}': data.senderName || data.remitente || 'Usuario',
-      '{campos}': data.changedFields ? data.changedFields.join(', ') : 'varios campos'
+      '{campos}': data.changedFields ? data.changedFields.join(', ') : 'varios campos',
+      '{resumen_cambios}': data.changedFields ? data.changedFields.join(', ') : 'varios campos'
     };
     
     // Reemplazar cada variable
     for (const [variable, value] of Object.entries(variableMap)) {
       processed = processed.replace(new RegExp(variable.replace(/[{}]/g, '\\$&'), 'g'), String(value));
     }
+    
+    // Eliminar secciones con variables que no tienen datos
+    // Eliminar "Alertas: {alertas}." o "Alertas:{alertas}" si alertas no existe
+    if (!data.alertas) {
+      processed = processed.replace(/\s*Alertas:\s*\{alertas\}\.?/gi, '');
+      processed = processed.replace(/\s*Alertas\s*:\s*\{alertas\}\.?/gi, '');
+    }
+    
+    // Eliminar "Estado actual{estado_pedido}" o "Estado actual: {estado_pedido}" si estado_pedido no existe
+    if (!data.estado_pedido && !data.estadoPedido) {
+      processed = processed.replace(/\s*Estado actual\s*:?\s*\{estado_pedido\}\.?/gi, '');
+      processed = processed.replace(/\s*Estado\s+actual\s*:?\s*\{estado_pedido\}\.?/gi, '');
+    }
+    
+    // Limpiar espacios dobles, puntos duplicados y espacios antes de puntos
+    processed = processed.replace(/\s{2,}/g, ' ').replace(/\.\./g, '.').replace(/\s+\./g, '.').trim();
     
     return processed;
   }
