@@ -1,30 +1,38 @@
 # ===== STAGE 1: Builder =====
-FROM node:18-alpine AS build
+FROM node:18 AS builder
 
 WORKDIR /app
 
-# Copiar archivos de dependencias
-COPY package.json pnpm-lock.yaml ./
+# Copiamos archivos de dependencias
+COPY package.json package-lock.json ./
+COPY tsconfig*.json ./
 
-# Instalar pnpm
-RUN npm install -g pnpm
+# Instalamos TODAS las dependencias (incluye dev)
+RUN npm ci
 
-# Instalar dependencias
-RUN pnpm install --frozen-lockfile
-
-# Copiar código fuente
+# Copiamos el código fuente
 COPY . .
 
-# Compilar frontend (genera /dist)
-RUN pnpm build
+# Compilamos Nest
+RUN npm run build
 
-# ===== STAGE 2: Producción =====
-FROM nginx:alpine
+# ===== STAGE 2: Production =====
+FROM node:18
 
-# Copiar archivos compilados al root del servidor web
-COPY --from=build /app/dist /usr/share/nginx/html
+WORKDIR /app
+ENV NODE_ENV=production
 
-# Puerto interno del nginx del frontend
-EXPOSE 80
+# Copiar archivos necesarios para instalar dependencias
+COPY package.json package-lock.json ./
 
-CMD ["nginx", "-g", "daemon off;"]
+# Instalar dependencias de producción
+RUN npm ci --production
+
+# Copiar solo el build final desde el builder
+COPY --from=builder /app/dist ./dist
+
+# Exponer el puerto interno del backend
+EXPOSE 3000
+
+# Ejecutar la app Nest
+CMD ["node", "dist/main.js"]
