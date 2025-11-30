@@ -1,38 +1,30 @@
 # ===== STAGE 1: Builder =====
-FROM node:18-alpine AS builder
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Copiar package files
-COPY package.json package-lock.json ./
+# Copiar archivos de dependencias
+COPY package.json pnpm-lock.yaml ./
 
-# Instalar dependencias (incluyendo devDependencies para el build)
-RUN npm ci
+# Instalar pnpm
+RUN npm install -g pnpm
+
+# Instalar dependencias
+RUN pnpm install --frozen-lockfile
 
 # Copiar código fuente
 COPY . .
 
-# Compilar TypeScript a JavaScript
-RUN npm run build
+# Compilar frontend (genera /dist)
+RUN pnpm build
 
-# ===== STAGE 2: Production =====
-FROM node:18-alpine
+# ===== STAGE 2: Producción =====
+FROM nginx:alpine
 
-WORKDIR /app
+# Copiar archivos compilados al root del servidor web
+COPY --from=build /app/dist /usr/share/nginx/html
 
-ENV NODE_ENV=production
+# Puerto interno del nginx del frontend
+EXPOSE 80
 
-# Copiar package files
-COPY package.json package-lock.json ./
-
-# Instalar solo dependencias de producción
-RUN npm ci --production && npm cache clean --force
-
-# Copiar el código compilado desde el builder
-COPY --from=builder /app/dist ./dist
-
-# Exponer puerto 4500
-EXPOSE 4500
-
-# Comando para iniciar la aplicación
-CMD ["node", "dist/main.js"]
+CMD ["nginx", "-g", "daemon off;"]
