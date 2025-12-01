@@ -1,0 +1,613 @@
+openapi: 3.0.3
+info:
+  title: TITEC - Sistema de Notificaciones API
+  description: |
+    **API del Microservicio de Notificaciones para TITEC - Versión Final**
+    
+    Sistema completo de notificaciones con integración Kafka para comunicación entre microservicios.
+    
+    ## 🎯 Características principales:
+    
+    - ✅ **14 plantillas de notificación** (7 para compradores, 7 para vendedores)
+    - ✅ **Múltiples canales**: Email, Push Notifications
+    - ✅ **Integración con Kafka**: Consume eventos de órdenes, pagos, mensajes y productos
+    - ✅ **Estados progresivos**: pendiente → enviado → recibido → leído
+    - ✅ **Metadata dinámica**: Personalización basada en variables de contexto
+    - ✅ **Gestión de lectura**: Marcar notificaciones como leídas individual
+    - ✅ **Estadísticas**: Tracking de notificaciones por usuario, tipo y estado
+    
+    ## 📋 Plantillas disponibles:
+    
+    ### Comprador (Plantillas 1-7):
+    1. Nueva venta realizada
+    2. Compra confirmada
+    3. Estado de pedido cambiado
+    4. Pedido enviado
+    5. Pedido cancelado
+    6. Problema de pago
+    7. Pago confirmado
+    8. Pago rechazado
+    
+    ### Vendedor (Plantillas 8-14):
+    9. Pago recibido
+    10. Venta cancelada por vendedor
+    11. Compra cancelada por comprador
+    12. Pedido listo para despacho
+    13. Nuevo mensaje recibido
+    14. Producto editado
+    
+    ## 🔌 Integración Kafka:
+    
+    El sistema consume automáticamente eventos de los siguientes topics:
+    - `orders.created` - Nueva orden creada
+    - `orders.status_changed` - Cambio de estado de orden
+    - `orders.shipped` - Orden enviada
+    - `payments.confirmed` - Pago confirmado
+    - `payments.rejected` - Pago rechazado
+    - `payments.issues` - Problema con pago
+    - `messages.received` - Nuevo mensaje recibido
+    - `products.edited` - Producto editado
+    
+  version: 1.0.0
+  contact:
+    name: Equipo TITEC
+    email: equipo@titec.cl
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api/notifications
+    description: Servidor de desarrollo local
+
+
+tags:
+  - name: "📨 Gestión de Notificaciones"
+    description: Operaciones CRUD de notificaciones
+  - name: "👤 Notificaciones de Usuario"
+    description: Consultas específicas por usuario
+  - name: "📊 Estadísticas"
+    description: Métricas y analytics de notificaciones
+  - name: "⚙️ Configuración"
+    description: Plantillas, canales y tipos
+  - name: "🧪 Testing"
+    description: Endpoints para pruebas y diagnóstico
+
+paths:
+  # ===== GESTIÓN DE NOTIFICACIONES =====
+  
+  /create:
+    post:
+      tags:
+        - "📨 Gestión de Notificaciones"
+      summary: Crear nueva notificación
+      description: |
+        Crea una notificación manualmente con los parámetros especificados.
+        
+        **Nota**: En producción, las notificaciones se crean automáticamente 
+        a través de eventos Kafka. Este endpoint es útil para testing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id_emisor
+                - id_receptor
+                - id_plantilla
+                - channel_ids
+              properties:
+                id_emisor:
+                  type: string
+                  description: ID del usuario que genera la notificación
+                  example: "seller-uuid-123"
+                id_receptor:
+                  type: string
+                  description: ID del usuario que recibe la notificación
+                  example: "buyer-uuid-456"
+                id_plantilla:
+                  type: integer
+                  description: ID de la plantilla a utilizar (1-14)
+                  minimum: 1
+                  maximum: 14
+                  example: 1
+                channel_ids:
+                  type: array
+                  description: IDs de los canales por los que enviar (1=Email, 2=SMS, 3=Push, 4=Interna)
+                  items:
+                    type: integer
+                    enum: [1, 2, 3, 4]
+                  example: [1, 3]
+      responses:
+        '201':
+          description: Notificación creada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id_notificacion:
+                    type: string
+                    example: "674a5b8f9c1d2e3f4a5b6c7d"
+                  estado:
+                    type: string
+                    example: "pendiente"
+                  message:
+                    type: string
+                    example: "Notificación creada exitosamente"
+        '400':
+          description: Datos inválidos
+        '500':
+          description: Error del servidor
+
+  # ===== NOTIFICACIONES DE USUARIO =====
+  
+  /user/{userId}:
+    get:
+      tags:
+        - "👤 Notificaciones de Usuario"
+      summary: Obtener notificaciones de un usuario
+      description: |
+        Obtiene todas las notificaciones de un usuario específico con paginación.
+        
+        Las notificaciones se devuelven procesadas con:
+        - Título y mensaje con variables reemplazadas
+        - Metadata completa y normalizada
+        - Información de canales utilizados
+        - Estado actual de la notificación
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario (puede ser string UUID o número)
+          schema:
+            type: string
+          example: "buyer-test-123"
+        - name: page
+          in: query
+          description: Número de página (comienza en 1)
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          example: 1
+        - name: limit
+          in: query
+          description: Cantidad de notificaciones por página
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          example: 20
+      responses:
+        '200':
+          description: Lista de notificaciones del usuario
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProcessedNotification'
+        '404':
+          description: Usuario no encontrado
+        '500':
+          description: Error del servidor
+
+  /notificacion_leida/{notificationId}:
+    post:
+      tags:
+        - "👤 Notificaciones de Usuario"
+      summary: Marcar notificación como leída
+      description: Marca una notificación individual como leída
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          description: ID de la notificación
+          schema:
+            type: string
+          example: "674a5b8f9c1d2e3f4a5b6c7d"
+      responses:
+        '200':
+          description: Notificación marcada como leída
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Notificación marcada como leída"
+                  notificationId:
+                    type: string
+                    example: "674a5b8f9c1d2e3f4a5b6c7d"
+        '404':
+          description: Notificación no encontrada
+        '500':
+          description: Error del servidor
+
+  # ===== ESTADÍSTICAS =====
+  
+  /stats:
+    get:
+      tags:
+        - "📊 Estadísticas"
+      summary: Estadísticas básicas del sistema
+      description: |
+        Obtiene estadísticas generales del sistema de notificaciones:
+        - Total de notificaciones
+        - Distribución por estado
+        - Notificaciones por plantilla
+        - Notificaciones por canal
+      responses:
+        '200':
+          description: Estadísticas del sistema
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 1250
+                  byStatus:
+                    type: object
+                    properties:
+                      pendiente:
+                        type: integer
+                        example: 45
+                      enviado:
+                        type: integer
+                        example: 890
+                      leido:
+                        type: integer
+                        example: 315
+                  byTemplate:
+                    type: object
+                    example:
+                      "1": 150
+                      "2": 148
+                      "3": 95
+                  byChannel:
+                    type: object
+                    properties:
+                      email:
+                        type: integer
+                        example: 1100
+                      push:
+                        type: integer
+                        example: 980
+
+  # ===== CONFIGURACIÓN =====
+  
+  /templates:
+    get:
+      tags:
+        - "⚙️ Configuración"
+      summary: Listar todas las plantillas
+      description: |
+        Obtiene la lista completa de plantillas de notificación disponibles.
+        
+        Incluye:
+        - ID de plantilla
+        - Descripción base
+        - Asunto base
+        - Tipo de plantilla
+        - Rol asociado (buyer/seller)
+      responses:
+        '200':
+          description: Lista de plantillas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id_Plantilla:
+                      type: integer
+                      example: 1
+                    descripción_base:
+                      type: string
+                      example: "Tienes una nueva venta de {{productName}} por {{amount}}{{currency}}"
+                    asunto_base:
+                      type: string
+                      example: "¡Nueva venta realizada!"
+                    tipo_plantilla:
+                      type: integer
+                      example: 1
+                    rol:
+                      type: string
+                      enum: [buyer, seller]
+                      example: "seller"
+
+  /channels:
+    get:
+      tags:
+        - "⚙️ Configuración"
+      summary: Listar canales de notificación
+      description: |
+        Obtiene la lista de canales disponibles:
+        1. Email
+        2. SMS
+        3. Push Notification
+        4. Notificación interna
+      responses:
+        '200':
+          description: Lista de canales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id_canal:
+                      type: integer
+                      example: 1
+                    descripción:
+                      type: string
+                      example: "Email"
+                    activo:
+                      type: boolean
+                      example: true
+
+  /template-types:
+    get:
+      tags:
+        - "⚙️ Configuración"
+      summary: Listar tipos de plantilla
+      description: |
+        Obtiene la lista de tipos de plantilla:
+        - order_confirmation
+        - payment_status
+        - shipping_update
+        - order_canceled
+        - new_message
+        - product_update
+      responses:
+        '200':
+          description: Lista de tipos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id_tipo:
+                      type: integer
+                    tipo:
+                      type: string
+                    descripción:
+                      type: string
+
+  # ===== TESTING Y DIAGNÓSTICO =====
+  
+  /listener-status:
+    get:
+      tags:
+        - "🧪 Testing"
+      summary: Estado de integración Kafka
+      description: |
+        Verifica el estado de la integración con Kafka:
+        - Conexión activa
+        - Eventos procesados
+        - Consumers activos
+      responses:
+        '200':
+          description: Estado de listeners
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changeStreams:
+                    type: object
+                    properties:
+                      connected:
+                        type: boolean
+                        example: true
+                      ordersStreamActive:
+                        type: boolean
+                        example: true
+                      paymentsStreamActive:
+                        type: boolean
+                        example: true
+                  notifications:
+                    type: object
+                  integration:
+                    type: object
+                    properties:
+                      active:
+                        type: boolean
+                        example: true
+                      message:
+                        type: string
+                        example: "🎧 Escuchando eventos en tiempo real"
+
+  /health/email:
+    get:
+      tags:
+        - "🧪 Testing"
+      summary: Verificar salud del servicio de email
+      description: Prueba la conexión con el servidor SMTP
+      responses:
+        '200':
+          description: Estado del servicio de email
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: "email"
+                  status:
+                    type: string
+                    enum: [healthy, unhealthy]
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /test/email:
+    post:
+      tags:
+        - "🧪 Testing"
+      summary: Enviar email de prueba
+      description: Envía un email de prueba para verificar configuración SMTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - to
+              properties:
+                to:
+                  type: string
+                  format: email
+                  example: "test@example.com"
+                subject:
+                  type: string
+                  example: "Test Email"
+                content:
+                  type: string
+                  example: "<h1>This is a test</h1>"
+      responses:
+        '200':
+          description: Email enviado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /retry-failed:
+    post:
+      tags:
+        - "🧪 Testing"
+      summary: Reintentar notificaciones fallidas
+      description: Reintenta el envío de notificaciones que fallaron anteriormente
+      responses:
+        '200':
+          description: Reintento iniciado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Failed notifications retry initiated"
+
+components:
+  schemas:
+    ProcessedNotification:
+      type: object
+      properties:
+        id_notificacion:
+          type: string
+          description: ID único de la notificación
+          example: "674a5b8f9c1d2e3f4a5b6c7d"
+        id_emisor:
+          type: string
+          description: ID del usuario emisor
+          example: "seller-uuid-456"
+        id_receptor:
+          type: string
+          description: ID del usuario receptor
+          example: "buyer-uuid-123"
+        id_plantilla:
+          type: integer
+          description: ID de la plantilla utilizada
+          example: 1
+        title:
+          type: string
+          description: Título procesado de la notificación
+          example: "¡Nueva venta realizada!"
+        message:
+          type: string
+          description: Mensaje procesado con variables reemplazadas
+          example: "Tienes una nueva venta de Laptop Dell por $45,990 CLP"
+        type:
+          type: string
+          description: Tipo de notificación
+          enum:
+            - order_confirmation
+            - payment_status
+            - shipping_update
+            - order_canceled
+            - new_message
+            - product_update
+          example: "order_confirmation"
+        estado:
+          type: string
+          description: Estado actual de la notificación
+          enum: [pendiente, enviado, recibido, leido, fallido]
+          example: "enviado"
+        leido:
+          type: boolean
+          description: Si fue leída por el usuario
+          example: false
+        fecha_creacion:
+          type: string
+          format: date-time
+          example: "2025-11-29T10:30:00.000Z"
+        fecha_envio:
+          type: string
+          format: date-time
+          example: "2025-11-29T10:30:05.000Z"
+        metadata:
+          type: object
+          description: Datos contextuales de la notificación
+          properties:
+            orderId:
+              type: string
+              example: "ORD-1001"
+            amount:
+              type: number
+              example: 45990
+            currency:
+              type: string
+              example: "CLP"
+            productName:
+              type: string
+              example: "Laptop Dell"
+            buyerName:
+              type: string
+              example: "Juan Pérez"
+            sellerName:
+              type: string
+              example: "Tienda Tech"
+            actionUrl:
+              type: string
+              example: "/orders/ORD-1001"
+        channels:
+          type: array
+          description: Canales por los que se envió
+          items:
+            type: object
+            properties:
+              id_canal:
+                type: integer
+                example: 1
+              descripción:
+                type: string
+                example: "Email"
+              estado:
+                type: string
+                example: "enviado"
+
+# ===== END OF FILE =====
