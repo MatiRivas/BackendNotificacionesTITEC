@@ -1,66 +1,56 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
-import { PreferencesController } from './preferences.controller'; // Nuevo - Sprint 2
+import { ExternalModule } from '../external/external.module';
 
 // Schemas
 import { Notification, NotificationSchema } from './schemas/notification.schema';
-import { NotificationHistory, NotificationHistorySchema } from './schemas/notification-history.schema';
-import { Template, TemplateSchema } from './schemas/template.schema';
-import { ChannelType, ChannelTypeSchema } from './schemas/channel-type.schema';
-import { TemplateType, TemplateTypeSchema } from './schemas/template-type.schema';
-import { UserPreferences, UserPreferencesSchema } from './schemas/user-preferences.schema'; // Nuevo - Sprint 2
-import { NotificationActions, NotificationActionsSchema } from './schemas/notification-actions.schema'; // Nuevo - Sprint 2
+import { Template, TemplateSchema, TemplateType, TemplateTypeSchema } from './schemas/template.schema';
+import { Channel, ChannelSchema } from './schemas/channel.schema';
 
 // Channel Services
 import { EmailService } from './channels/email.service';
 import { SmsService } from './channels/sms.service';
 import { PushService } from './channels/push.service';
-import { InternalNotificationService } from './channels/internal.service'; // Nuevo - Sprint 2
+import { InternalNotificationService } from './channels/internal.service';
 
-// New Services - Sprint 2
-import { UserPreferencesService } from './services/user-preferences.service';
+// Services
 import { FallbackService } from './services/fallback.service';
 import { ChannelManagerService } from './services/channel-manager.service';
 
 @Module({
   imports: [
     ConfigModule,
+    forwardRef(() => ExternalModule),
     MongooseModule.forFeature([
       { name: Notification.name, schema: NotificationSchema },
-      { name: NotificationHistory.name, schema: NotificationHistorySchema },
       { name: Template.name, schema: TemplateSchema },
-      { name: ChannelType.name, schema: ChannelTypeSchema },
       { name: TemplateType.name, schema: TemplateTypeSchema },
-      { name: UserPreferences.name, schema: UserPreferencesSchema }, // Nuevo - Sprint 2
-      { name: NotificationActions.name, schema: NotificationActionsSchema }, // Nuevo - Sprint 2
+      { name: Channel.name, schema: ChannelSchema },
     ]),
   ],
   controllers: [
     NotificationsController,
-    PreferencesController, // Nuevo - Sprint 2
   ],
   providers: [
     NotificationsService,
     EmailService,
     SmsService,
     PushService,
-    InternalNotificationService, // Nuevo - Sprint 2
-    UserPreferencesService, // Nuevo - Sprint 2
-    FallbackService, // Nuevo - Sprint 2
-    ChannelManagerService, // Nuevo - Sprint 2
+    InternalNotificationService,
+    FallbackService,
+    ChannelManagerService,
   ],
   exports: [
     NotificationsService,
     EmailService,
     SmsService,
     PushService,
-    InternalNotificationService, // Nuevo - Sprint 2
-    UserPreferencesService, // Nuevo - Sprint 2
-    FallbackService, // Nuevo - Sprint 2
-    ChannelManagerService, // Nuevo - Sprint 2
+    InternalNotificationService,
+    FallbackService,
+    ChannelManagerService,
   ],
 })
 export class NotificationsModule {}

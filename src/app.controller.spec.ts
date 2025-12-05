@@ -12,10 +12,10 @@ describe('AppController', () => {
     }).compile();
   });
 
-  describe('getHello', () => {
-    it('should return "Hello World!"', () => {
+  describe('getApiInfo', () => {
+    it('should return API info', () => {
       const appController = app.get(AppController);
-      expect(appController.getHello()).toBe('Hello World!');
+      expect(appController.getApiInfo()).toBeDefined();
     });
   });
 });

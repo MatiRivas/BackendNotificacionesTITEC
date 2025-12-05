@@ -147,6 +147,27 @@ export class OrderConsumer implements OnModuleInit {
         });
       }
 
+      // HDU2 (Sprint 4): Notificar al vendedor si el pedido está listo para despacho
+      if (statusEvent.newStatus === 'Listo para despacho' || 
+          statusEvent.newStatus === 'listo_para_despacho' ||
+          statusEvent.newStatus === 'ready_to_ship') {
+        
+        await this.notificationsService.createNotificationFromEvent({
+          eventType: 'order_ready_to_ship',
+          eventData: statusEvent,
+          recipients: [{
+            userId: statusEvent.sellerId,
+            email: statusEvent.sellerEmail,
+            role: 'seller'
+          }],
+          templateType: 'order_ready_to_ship',
+          channels: ['email', 'push'],
+          priority: 'high',
+        });
+
+        this.logger.log(`Order ready to ship notification sent for order: ${statusEvent.orderId}`);
+      }
+
       // Manejar cancelaciones
       if (statusEvent.newStatus === 'cancelled') {
         await this.handleOrderCancellation(statusEvent);
@@ -163,7 +184,10 @@ export class OrderConsumer implements OnModuleInit {
     // Notificar cancelación al vendedor
     await this.notificationsService.createNotificationFromEvent({
       eventType: 'order_cancelled',
-      eventData: statusEvent,
+      eventData: {
+        ...statusEvent,
+        helpCenterUrl: '/help/cancellation-seller'
+      },
       recipients: [{
         userId: statusEvent.sellerId,
         email: statusEvent.sellerEmail,
@@ -177,7 +201,10 @@ export class OrderConsumer implements OnModuleInit {
     // Notificar cancelación al comprador
     await this.notificationsService.createNotificationFromEvent({
       eventType: 'order_cancelled',
-      eventData: statusEvent,
+      eventData: {
+        ...statusEvent,
+        helpCenterUrl: '/help/cancellation-buyer'
+      },
       recipients: [{
         userId: statusEvent.buyerId,
         email: statusEvent.buyerEmail,

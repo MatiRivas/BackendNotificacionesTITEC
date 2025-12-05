@@ -47,6 +47,11 @@ export class EmailService {
         user: smtpUser,
         pass: smtpPass,
       },
+      tls: {
+        rejectUnauthorized: false,
+      },
+      logger: false,
+      debug: false,
     };
 
     this.transporter = nodemailer.createTransport(smtpConfig);

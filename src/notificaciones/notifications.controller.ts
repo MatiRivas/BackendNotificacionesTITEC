@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Query, Param, Body, Logger } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './channels/email.service';
+import { EventsListenerService } from '../external/events-listener.service';
 
 @Controller('notifications')
 export class NotificationsController {
@@ -9,9 +10,22 @@ export class NotificationsController {
   constructor(
     private readonly notificationsService: NotificationsService,
     private readonly emailService: EmailService,
+    private readonly eventsListenerService: EventsListenerService,
   ) {}
 
   // ===== NUEVOS ENDPOINTS PARA BD ACTUAL =====
+
+  @Post('/test-create')
+  async testCreateNotification(@Body() body: {
+    id_emisor: string;
+    id_receptor: string;
+    id_plantilla: number;
+    channel_ids: number[];
+    context?: any;
+  }) {
+    this.logger.log('Testing notification creation...');
+    return this.notificationsService.createSimpleNotification(body);
+  }
 
   @Get('/templates')
   async getAllTemplates() {
@@ -44,13 +58,62 @@ export class NotificationsController {
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
   ) {
-    const userIdNumber = parseInt(userId);
-    return this.notificationsService.getNotificationsByUserId(userIdNumber, page, limit);
+    // Intentar como string primero (para UUIDs como "seller-test-456")
+    const stringResult = await this.notificationsService.getNotificationsByUser(userId, page, limit);
+    
+    // Si no hay resultados y el userId parece ser un número, intentar como número
+    if ((!stringResult || stringResult.length === 0) && !isNaN(Number(userId))) {
+      const userIdNumber = parseInt(userId);
+      return this.notificationsService.getNotificationsByUserId(userIdNumber, page, limit);
+    }
+    
+    return stringResult;
   }
 
   @Get('/stats')
   async getStats() {
     return this.notificationsService.getBasicNotificationStats();
+  }
+
+  @Post('/notificacion_leida/:notificationId')
+  async markNotificationAsRead(
+    @Param('notificationId') notificationId: string
+  ) {
+    return this.notificationsService.markNotificationAsRead(notificationId);
+  }
+
+  @Post('/notificaciones_leidas')
+  async markMultipleNotificationsAsRead(
+    @Body() body: { notificationIds: string[] }
+  ) {
+    if (!body.notificationIds || !Array.isArray(body.notificationIds)) {
+      return {
+        success: false,
+        message: 'Se requiere un array de IDs de notificaciones',
+        updated: 0
+      };
+    }
+    
+    return this.notificationsService.markMultipleNotificationsAsRead(body.notificationIds);
+  }
+
+  // ===== NUEVO ENDPOINT PARA CHANGE STREAMS =====
+
+  @Get('/listener-status')
+  async getListenerStatus() {
+    const listenerStats = this.eventsListenerService.getListenerStats();
+    const notificationStats = await this.notificationsService.getBasicNotificationStats();
+    
+    return {
+      changeStreams: listenerStats,
+      notifications: notificationStats,
+      integration: {
+        active: listenerStats.connected && listenerStats.ordersStreamActive && listenerStats.paymentsStreamActive,
+        message: listenerStats.connected ? 
+          '🎧 Escuchando eventos en tiempo real' : 
+          '❌ Change Streams desconectados'
+      }
+    };
   }
 
   // ===== ENDPOINTS EXISTENTES (para compatibilidad) =====

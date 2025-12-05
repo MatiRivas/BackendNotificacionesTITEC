@@ -1,337 +1,788 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { randomUUID } from 'crypto';
 
-// Schemas existentes
-import { 
-  NotificationHistory, 
-  NotificationHistoryDocument, 
-  NotificationHistoryStatus,
-  NotificationChannel,
-  NotificationPriority 
-} from './schemas/notification-history.schema';
-
-// Nuevos schemas para BD actual
+// Schemas actualizados para tu BD
 import { Notification, NotificationDocument } from './schemas/notification.schema';
-import { Template, TemplateDocument } from './schemas/template.schema';
-import { ChannelType, ChannelTypeDocument } from './schemas/channel-type.schema';
-import { TemplateType, TemplateTypeDocument } from './schemas/template-type.schema';
+import { Template, TemplateDocument, TemplateType, TemplateTypeDocument } from './schemas/template.schema';
+import { Channel, ChannelDocument } from './schemas/channel.schema';
 
-import { CreateNotificationFromEventDto } from './dto/notification-context.dto';
 import { EmailService } from './channels/email.service';
+import { UsersApiService } from '../external/users-api.service';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
+  // Mapeo de ID de plantilla a tipo de notificación para el frontend
+  private readonly PLANTILLA_TO_TYPE = {
+    1: 'order_created',        // Nueva venta (seller)
+    2: 'order_created',        // Compra confirmada (buyer)
+    3: 'order_status_changed', // Actualización de pedido
+    4: 'order_shipped',        // Pedido enviado
+    5: 'order_canceled',       // Pedido cancelado (genérico)
+    6: 'payment_issue',        // Problema de pago
+    7: 'payment_confirmed',    // Pago confirmado (buyer)
+    8: 'payment_status',       // Pago rechazado (buyer)
+    9: 'payment_confirmed',    // Pago recibido (seller)
+    10: 'order_canceled',      // Venta cancelada por vendedor
+    11: 'order_canceled',      // Compra cancelada por comprador
+    12: 'order_ready_to_ship', // Listo para despacho
+    13: 'message_received',    // Nuevo mensaje
+    14: 'product_edited'       // Producto editado
+  };
+
   constructor(
-    @InjectModel(NotificationHistory.name)
-    private notificationHistoryModel: Model<NotificationHistoryDocument>,
     @InjectModel(Notification.name)
     private notificationModel: Model<NotificationDocument>,
     @InjectModel(Template.name)
     private templateModel: Model<TemplateDocument>,
-    @InjectModel(ChannelType.name)
-    private channelTypeModel: Model<ChannelTypeDocument>,
     @InjectModel(TemplateType.name)
     private templateTypeModel: Model<TemplateTypeDocument>,
+    @InjectModel(Channel.name)
+    private channelModel: Model<ChannelDocument>,
     private emailService: EmailService,
+    private usersApiService: UsersApiService,
   ) {}
 
-  async createNotificationFromEvent(dto: CreateNotificationFromEventDto): Promise<NotificationHistory[]> {
-    const notifications: NotificationHistory[] = [];
-    const eventId = randomUUID();
-
-    this.logger.log(`Creating notifications for event: ${dto.eventType}, recipients: ${dto.recipients.length}`);
-
-    for (const recipient of dto.recipients) {
-      const channels = dto.channels || ['email'];
+  /**
+   * Crear notificación simple con tu estructura actual (SIN cache)
+   */
+  async createSimpleNotification(data: {
+    id_emisor: string;
+    id_receptor: string;
+    id_plantilla: number;
+    channel_ids: number[]; // Array de canales a usar
+    context?: any;
+  }): Promise<Notification> {
+    try {
+      // 1. Verificar que la plantilla existe
+      const plantilla = await this.templateModel.findOne({ 
+        id_Plantilla: data.id_plantilla 
+      }).exec();
       
-      for (const channelName of channels) {
+      if (!plantilla) {
+        throw new Error(`Template ${data.id_plantilla} not found`);
+      }
+
+      // 2. Verificar que los canales existen
+      const canales = await this.channelModel.find({ 
+        id_canal: { $in: data.channel_ids }
+      }).exec();
+      
+      if (canales.length !== data.channel_ids.length) {
+        throw new Error('One or more channels not found');
+      }
+
+      // 3. Generar ID único de notificación
+      const nextId = await this.getNextNotificationId();
+
+      // 4. Normalizar metadata (eliminar duplicados) antes de guardar
+      const normalizedMetadata = data.context ? this.buildMetadataFromEvent(data.context) : {};
+
+      // 5. Crear notificación con metadata normalizada
+      const notification = new this.notificationModel({
+        id_notificacion: nextId,
+        fecha_hora: new Date(),
+        id_emisor: data.id_emisor,
+        id_receptor: data.id_receptor,
+        id_plantilla: data.id_plantilla,
+        channel_ids: data.channel_ids,
+        estado: 'pendiente',
+        metadata: normalizedMetadata, // Guardar metadata normalizada
+      });
+
+      const saved = await notification.save();
+      this.logger.log(`Created notification ${saved.id_notificacion} for user ${data.id_receptor}`);
+      
+      return saved;
+    } catch (error) {
+      this.logger.error(`Error creating notification:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generar próximo ID de notificación
+   */
+  private async getNextNotificationId(): Promise<number> {
+    const lastNotification = await this.notificationModel
+      .findOne({}, {}, { sort: { id_notificacion: -1 } })
+      .exec();
+    
+    return lastNotification ? lastNotification.id_notificacion + 1 : 1;
+  }
+
+  /**
+   * Enviar notificación por todos sus canales
+   */
+  async sendNotification(notificationId: string): Promise<void> {
+    try {
+      // 1. Buscar notificación
+      const notification = await this.notificationModel.findById(notificationId).exec();
+      if (!notification) {
+        throw new Error(`Notification ${notificationId} not found`);
+      }
+
+      // 2. Obtener datos del receptor SIEMPRE desde API (sin cache)
+      const receptorData = await this.usersApiService.getUser(notification.id_receptor);
+
+      // 3. Obtener plantilla
+      const template = await this.templateModel.findOne({
+        id_Plantilla: notification.id_plantilla
+      }).exec();
+
+      if (!template) {
+        throw new Error(`Template ${notification.id_plantilla} not found`);
+      }
+
+      // 4. Enviar por cada canal
+      let enviadoExitoso = false;
+      for (const canalId of notification.channel_ids) {
         try {
-          // Generar contenido de la notificación
-          const content = await this.generateNotificationContent(
-            dto.templateType,
-            dto.eventData,
-            recipient.role,
-            channelName
-          );
-
-          // Crear registro en la base de datos
-          const notification = new this.notificationHistoryModel({
-            eventId,
-            eventType: dto.eventType,
-            userId: recipient.userId,
-            email: recipient.email,
-            phone: recipient.phone,
-            templateType: dto.templateType,
-            channel: channelName as NotificationChannel,
-            priority: dto.priority || NotificationPriority.MEDIUM,
-            status: NotificationHistoryStatus.PENDING,
-            subject: content.subject,
-            content: content.body,
-            eventData: dto.eventData,
-            attempts: 0,
+          const canal = await this.channelModel.findOne({ id_canal: canalId }).exec();
+          if (!canal) {
+            this.logger.warn(`Channel ${canalId} not found`);
+            continue;
+          }
+          await this.notificationModel.findByIdAndUpdate(notificationId, {
+            receptor_cache: receptorData
           });
-
-          const savedNotification = await notification.save();
-          notifications.push(savedNotification);
-
-          // Enviar notificación de forma asíncrona
-          this.sendNotificationAsync(savedNotification);
-
         } catch (error) {
-          this.logger.error(`Error creating notification for user ${recipient.userId} via ${channelName}:`, error);
+          this.logger.error(`Could not get user data for ${notification.id_receptor}`);
+          if (!receptorData) {
+            throw new Error('No user data available for sending notification');
+          }
         }
       }
+
+      // Obtener plantilla
+      const plantilla = await this.templateModel.findOne({
+        id_Plantilla: notification.id_plantilla
+      }).exec();
+
+      if (!plantilla) {
+        throw new Error(`Template ${notification.id_plantilla} not found`);
+      }
+
+      // 4. Enviar por cada canal
+      let successfulSend = false;
+      for (const canalId of notification.channel_ids) {
+        try {
+          const canal = await this.channelModel.findOne({ id_canal: canalId }).exec();
+          if (!canal) {
+            this.logger.warn(`Channel ${canalId} not found`);
+            continue;
+          }
+
+          // Enviar según el tipo de canal
+          switch (canal.tipo_canal.toLowerCase()) {
+            case 'email':
+              if (receptorData.email) {
+                await this.emailService.sendEmail({
+                  to: receptorData.email,
+                  subject: template.asunto_base || 'Notificación',
+                  html: template.descripción_base,
+                  context: {}, // Context para plantillas dinámicas si es necesario
+                });
+                successfulSend = true;
+                this.logger.log(`Email sent to ${receptorData.email}`);
+              }
+              break;
+              
+            case 'sms':
+              if (receptorData.telefono) {
+                this.logger.log(`SMS would be sent to ${receptorData.telefono}: ${template.descripción_base}`);
+                // TODO: Implementar SMS service
+                successfulSend = true;
+              }
+              break;
+              
+            case 'push':
+              if (receptorData.push_token) {
+                this.logger.log(`Push would be sent to ${receptorData.push_token}: ${template.descripción_base}`);
+                // TODO: Implementar Push service
+                successfulSend = true;
+              }
+              break;
+              
+            default:
+              this.logger.warn(`Unknown channel type: ${canal.tipo_canal}`);
+          }
+        } catch (error) {
+          this.logger.error(`Error sending via channel ${canalId}:`, error);
+        }
+      }
+
+      // Actualizar estado
+      await this.notificationModel.findByIdAndUpdate(notificationId, {
+        estado: successfulSend ? 'enviado' : 'fallido'
+      });
+
+    } catch (error) {
+      this.logger.error(`Error sending notification ${notificationId}:`, error);
+      await this.notificationModel.findByIdAndUpdate(notificationId, {
+        estado: 'fallido'
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Obtener notificaciones de un usuario con formato enriquecido para frontend
+   */
+  async getUserNotifications(userId: string, limit = 20): Promise<any[]> {
+    const notifications = await this.notificationModel
+      .find({ id_receptor: userId })
+      .sort({ fecha_hora: -1 })
+      .limit(limit)
+      .exec();
+
+    // Enriquecer con información procesada de plantillas
+    const enrichedNotifications = [];
+    
+    for (const notification of notifications) {
+      const template = await this.templateModel.findOne({ 
+        id_Plantilla: notification.id_plantilla 
+      }).exec();
+      
+      const notifObj = notification.toObject();
+      
+      // Procesar plantilla con datos del metadata
+      const title = template?.asunto_base ? 
+        this.processTemplate(template.asunto_base, notifObj.metadata || {}) : 
+        'Notificación';
+      
+      const message = template?.descripción_base ? 
+        this.processTemplate(template.descripción_base, notifObj.metadata || {}) : 
+        '';
+      
+      const enriched = {
+        id_notificacion: notifObj.id_notificacion,
+        fecha_hora: notifObj.fecha_hora,
+        id_emisor: notifObj.id_emisor,
+        id_receptor: notifObj.id_receptor,
+        id_plantilla: notifObj.id_plantilla,
+        channel_ids: notifObj.channel_ids,
+        estado: notifObj.estado,
+        type: this.PLANTILLA_TO_TYPE[notifObj.id_plantilla] || 'notification',
+        title: title,
+        message: message,
+        metadata: this.enrichMetadata(notifObj.metadata || {}, notifObj.id_plantilla)
+      };
+      
+      enrichedNotifications.push(enriched);
     }
 
-    this.logger.log(`Created ${notifications.length} notifications for event ${eventId}`);
+    return enrichedNotifications;
+  }
+
+  /**
+   * Procesar plantilla reemplazando variables con valores reales
+   */
+  private processTemplate(template: string, data: any): string {
+    let processed = template;
+    
+    // Mapeo de variables a campos del metadata
+    const variableMap = {
+      '{comprador}': data.buyerName || data.comprador || 'Usuario',
+      '{vendedor}': data.sellerName || data.vendorName || data.vendedor || 'Vendedor',
+      '{producto}': data.productName || data.producto || 'Producto',
+      '{nombre_producto}': data.productName || data.producto || 'Producto',
+      '{orden}': data.orderId || data.orden_id || data.orden || 'N/A',
+      '{id_pedido}': data.orderId || data.orden_id || data.orden || 'N/A',
+      '{nombre_cliente}': data.buyerName || data.comprador || 'Usuario',
+      '{monto}': data.amount ? `$${data.amount.toLocaleString('es-CL')}` : (data.monto ? `$${data.monto.toLocaleString('es-CL')}` : '$0'),
+      '{estado}': data.estadoPedido || data.status || data.estado || 'Pendiente',
+      '{usuario}': data.userName || data.usuario || 'Usuario',
+      '{motivo}': data.cancellationReason || data.rejectionReason || data.motivo || 'No especificado',
+      '{motivo_cancelacion}': data.cancellationReason || data.motivo || 'No especificado',
+      '{tipo_problema}': data.rejectionReason || data.issueType || 'No especificado',
+      '{razon}': data.razon || data.rejectionReason || 'No especificado',
+      '{link_soporte}': data.link_soporte || data.helpCenterUrl || '/help',
+      '{direccion}': data.deliveryAddress || data.direccion || '',
+      '{telefono}': data.buyerPhone || data.sellerPhone || data.telefono || '',
+      '{mensaje}': data.messagePreview || data.mensaje || '',
+      '{extracto}': data.messagePreview || data.mensaje || '',
+      '{remitente}': data.senderName || data.remitente || 'Usuario',
+      '{campos}': data.changedFields ? data.changedFields.join(', ') : 'varios campos',
+      '{resumen_cambios}': data.changedFields ? data.changedFields.join(', ') : 'varios campos'
+    };
+    
+    // Reemplazar cada variable
+    for (const [variable, value] of Object.entries(variableMap)) {
+      processed = processed.replace(new RegExp(variable.replace(/[{}]/g, '\\$&'), 'g'), String(value));
+    }
+    
+    // Eliminar secciones con variables que no tienen datos
+    // Eliminar "Alertas: {alertas}." o "Alertas:{alertas}" si alertas no existe
+    if (!data.alertas) {
+      processed = processed.replace(/\s*Alertas:\s*\{alertas\}\.?/gi, '');
+      processed = processed.replace(/\s*Alertas\s*:\s*\{alertas\}\.?/gi, '');
+    }
+    
+    // Eliminar "Estado actual{estado_pedido}" o "Estado actual: {estado_pedido}" si estado_pedido no existe
+    if (!data.estado_pedido && !data.estadoPedido) {
+      processed = processed.replace(/\s*Estado actual\s*:?\s*\{estado_pedido\}\.?/gi, '');
+      processed = processed.replace(/\s*Estado\s+actual\s*:?\s*\{estado_pedido\}\.?/gi, '');
+    }
+    
+    // Limpiar espacios dobles, puntos duplicados y espacios antes de puntos
+    processed = processed.replace(/\s{2,}/g, ' ').replace(/\.\./g, '.').replace(/\s+\./g, '.').trim();
+    
+    return processed;
+  }
+
+  /**
+   * Enriquecer metadata con campos específicos según el tipo de notificación
+   */
+  private enrichMetadata(metadata: any, plantillaId: number): any {
+    const type = this.PLANTILLA_TO_TYPE[plantillaId];
+    const enriched: any = { ...metadata };
+    
+    // Agregar actionUrl si no existe
+    if (!enriched.actionUrl && enriched.orderId) {
+      enriched.actionUrl = `/orders/${enriched.orderId}`;
+    }
+    
+    // Formatear montos como números y eliminar duplicados (monto, totalAmount)
+    if (enriched.amount && typeof enriched.amount === 'string') {
+      enriched.amount = parseFloat(enriched.amount);
+    }
+    
+    // Normalizar monto -> amount (evitar duplicado)
+    if (enriched.monto) {
+      if (typeof enriched.monto === 'string') {
+        enriched.amount = parseFloat(enriched.monto);
+      } else {
+        enriched.amount = enriched.monto;
+      }
+      delete enriched.monto;
+    }
+    
+    // Normalizar totalAmount -> amount (evitar duplicado)
+    if (enriched.totalAmount && !enriched.amount) {
+      enriched.amount = enriched.totalAmount;
+    }
+    if (enriched.totalAmount) {
+      delete enriched.totalAmount;
+    }
+    
+    // Agregar currency si no existe
+    if (enriched.amount && !enriched.currency) {
+      enriched.currency = 'CLP';
+    }
+    
+    // Para payment_status, asegurar que existe paymentOutcome
+    if (type === 'payment_status' && !enriched.paymentOutcome) {
+      enriched.paymentOutcome = enriched.tipo_problema === 'rechazado' ? 'rejected' : 'pending';
+    }
+    
+    // Para order_canceled, renombrar helpCenterUrl a link_soporte
+    if (type === 'order_canceled') {
+      if (!enriched.link_soporte && !enriched.helpCenterUrl) {
+        enriched.link_soporte = '/help/cancellation';
+      } else if (enriched.helpCenterUrl) {
+        enriched.link_soporte = enriched.helpCenterUrl;
+        delete enriched.helpCenterUrl;
+      }
+    }
+    
+    // Para payment_rejected (Plantilla 8), renombrar rejectionReason a razon
+    if (plantillaId === 8) {
+      if (enriched.rejectionReason) {
+        enriched.razon = enriched.rejectionReason;
+        delete enriched.rejectionReason;
+      }
+    }
+    
+    return enriched;
+  }
+
+  /**
+   * Estadísticas básicas
+   */
+  async getStats() {
+    const total = await this.notificationModel.countDocuments();
+    const pendientes = await this.notificationModel.countDocuments({ estado: 'pendiente' });
+    const enviados = await this.notificationModel.countDocuments({ estado: 'enviado' });
+    const fallidos = await this.notificationModel.countDocuments({ estado: 'fallido' });
+
+    return {
+      total,
+      pendientes,
+      enviados, 
+      fallidos,
+      byStatus: {
+        pendiente: pendientes,
+        enviado: enviados,
+        fallido: fallidos
+      },
+      byChannel: {
+        // Esto requeriría agregación más compleja, por ahora básico
+        email: 0,
+        sms: 0,
+        push: 0
+      },
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Health check para email
+   */
+  async healthCheckEmail(): Promise<boolean> {
+    try {
+      // Implementar test de conectividad de email
+      return true;
+    } catch (error) {
+      this.logger.error('Email health check failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Métodos de compatibilidad para mantener funcionalidad existente
+   */
+  
+  // Alias para compatibilidad con consumers
+  async createNotificationFromEvent(data: {
+    eventType: string;
+    recipients: Array<{ userId: string; email?: string; phone?: string; role?: string }>;
+    channels?: string[];
+    priority?: string;
+    templateData?: any;
+    eventData?: any; // Para compatibilidad
+    templateType?: string; // Para compatibilidad
+  }) {
+    this.logger.log(`Creating notifications for event: ${data.eventType}`);
+    
+    const notifications = [];
+    
+    for (const recipient of data.recipients) {
+      try {
+        // Determinar plantilla según el rol del destinatario
+        let plantillaId;
+        if (recipient.role === 'seller' || recipient.role === 'vendedor') {
+          plantillaId = this.mapEventToTemplateSeller(data.eventType);
+        } else {
+          plantillaId = this.mapEventToTemplateBuyer(data.eventType);
+        }
+        
+        // Construir metadata enriquecida con datos del evento
+        const enrichedMetadata = this.buildMetadataFromEvent(data.eventData, recipient.role);
+        
+        const notification = await this.createSimpleNotification({
+          id_emisor: 'system',
+          id_receptor: recipient.userId,
+          id_plantilla: plantillaId,
+          channel_ids: [1, 2],
+          context: { ...data.templateData, ...enrichedMetadata }
+        });
+        
+        notifications.push(notification);
+      } catch (error) {
+        this.logger.error(`Error creating notification for ${recipient.userId}:`, error);
+      }
+    }
+    
     return notifications;
   }
 
-  private async sendNotificationAsync(notification: NotificationHistoryDocument) {
-    try {
-      await this.updateNotificationStatus(notification.id, NotificationHistoryStatus.PENDING);
-      
-      let success = false;
-      
-      switch (notification.channel) {
-        case NotificationChannel.EMAIL:
-          if (notification.email) {
-            success = await this.emailService.sendEmail({
-              to: notification.email,
-              subject: notification.subject,
-              html: notification.content,
-              context: notification.eventData,
-            });
-          }
-          break;
-        
-        case NotificationChannel.SMS:
-          // TODO: Implementar SMS service
-          this.logger.warn('SMS service not implemented yet');
-          break;
-          
-        case NotificationChannel.PUSH:
-          // TODO: Implementar push notification service  
-          this.logger.warn('Push notification service not implemented yet');
-          break;
-          
-        default:
-          this.logger.warn(`Unknown notification channel: ${notification.channel}`);
-      }
-
-      if (success) {
-        await this.updateNotificationStatus(
-          notification.id, 
-          NotificationHistoryStatus.SENT,
-          { sentAt: new Date() }
-        );
-        this.logger.log(`Notification sent successfully: ${notification.id}`);
-      } else {
-        await this.updateNotificationStatus(
-          notification.id, 
-          NotificationHistoryStatus.FAILED,
-          { 
-            errorMessage: 'Failed to send notification',
-            attempts: notification.attempts + 1 
-          }
-        );
-        this.logger.error(`Failed to send notification: ${notification.id}`);
-      }
-    } catch (error) {
-      this.logger.error(`Error sending notification ${notification._id}:`, error);
-      await this.updateNotificationStatus(
-        notification.id, 
-        NotificationHistoryStatus.FAILED,
-        { 
-          errorMessage: error.message,
-          attempts: notification.attempts + 1 
-        }
-      );
-    }
-  }
-
-  private async updateNotificationStatus(
-    notificationId: string, 
-    status: NotificationHistoryStatus,
-    extraData: any = {}
-  ) {
-    await this.notificationHistoryModel.findByIdAndUpdate(
-      notificationId,
-      { 
-        status,
-        ...extraData,
-        updatedAt: new Date()
-      }
-    );
-  }
-
-  private async generateNotificationContent(
-    templateType: string,
-    eventData: any,
-    recipientRole: string,
-    channel: string
-  ): Promise<{ subject: string; body: string }> {
-    // Por ahora retornamos contenido básico, luego implementaremos templates
-    const templates = {
-      new_order_seller: {
-        subject: `Nueva orden recibida - #${eventData.orderId}`,
-        body: `¡Tienes una nueva orden! El comprador ha realizado una compra por $${eventData.totalAmount}. Revisa los detalles y prepara el envío.`
-      },
-      order_confirmation_buyer: {
-        subject: `Confirmación de compra - #${eventData.orderId}`,
-        body: `Tu compra ha sido confirmada exitosamente. Total: $${eventData.totalAmount}. Te notificaremos cuando el vendedor prepare tu pedido.`
-      },
-      order_status_seller: {
-        subject: `Estado de orden actualizado - #${eventData.orderId}`,
-        body: `El estado de tu orden ha cambiado a: ${eventData.newStatus}. Mantente al tanto de los próximos pasos.`
-      },
-      order_shipped_buyer: {
-        subject: `¡Tu pedido fue enviado! - #${eventData.orderId}`,
-        body: `¡Buenas noticias! Tu pedido ha sido enviado. Número de seguimiento: ${eventData.trackingNumber || 'N/A'}`
-      },
-      payment_confirmed_seller: {
-        subject: `Pago confirmado - #${eventData.orderId}`,
-        body: `El pago de $${eventData.amount} ha sido confirmado. Puedes proceder con el envío del producto.`
-      }
-    };
-
-    return templates[templateType] || {
-      subject: 'Notificación',
-      body: 'Tienes una nueva notificación.'
-    };
-  }
-
-  // Métodos para consultar notificaciones
-  async getNotificationsByUser(userId: string, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
+  /**
+   * Construir metadata desde eventData
+   */
+  private buildMetadataFromEvent(eventData: any, role?: string): any {
+    if (!eventData) return {};
     
-    return this.notificationHistoryModel
-      .find({ userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .exec();
-  }
-
-  async getNotificationStats() {
-    const stats = await this.notificationHistoryModel.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const channelStats = await this.notificationHistoryModel.aggregate([
-      {
-        $group: {
-          _id: '$channel',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    return {
-      byStatus: stats,
-      byChannel: channelStats,
-      total: await this.notificationHistoryModel.countDocuments()
-    };
-  }
-
-  async retryFailedNotifications() {
-    const failedNotifications = await this.notificationHistoryModel
-      .find({ 
-        status: NotificationHistoryStatus.FAILED,
-        attempts: { $lt: 3 } // Máximo 3 intentos
-      })
-      .exec();
-
-    this.logger.log(`Retrying ${failedNotifications.length} failed notifications`);
-
-    for (const notification of failedNotifications) {
-      await this.sendNotificationAsync(notification);
+    // Normalizar orderId (evitar duplicado orden_id)
+    const normalizedOrderId = eventData.orderId || eventData.orden_id;
+    
+    // Normalizar amount (evitar duplicados totalAmount, amount, monto)
+    const normalizedAmount = eventData.totalAmount || eventData.amount || eventData.monto;
+    
+    const metadata: any = {};
+    
+    // Solo agregar si existe
+    if (normalizedOrderId) metadata.orderId = normalizedOrderId;
+    if (normalizedAmount) {
+      metadata.amount = normalizedAmount;
+      metadata.currency = 'CLP';
     }
+    
+    // Datos de orden - NO incluir buyerId ni sellerId (ya están en id_emisor/id_receptor)
+    if (eventData.buyerEmail) metadata.buyerEmail = eventData.buyerEmail;
+    if (eventData.sellerEmail) metadata.sellerEmail = eventData.sellerEmail;
+    
+    // Nombres - normalizar a un solo campo cada uno
+    if (eventData.buyerName || eventData.comprador) {
+      metadata.buyerName = eventData.buyerName || eventData.comprador;
+    }
+    
+    // Usar solo sellerName (evitar duplicado con vendorName)
+    if (eventData.sellerName || eventData.vendorName || eventData.vendedor) {
+      metadata.sellerName = eventData.sellerName || eventData.vendorName || eventData.vendedor;
+    }
+    
+    // Usuario genérico para mensajes (evitar duplicado userName/usuario)
+    if (eventData.userName || eventData.usuario) {
+      metadata.userName = eventData.userName || eventData.usuario;
+    }
+    
+    // Productos - normalizar productName (evitar duplicado producto)
+    if (eventData.products && eventData.products.length > 0) {
+      metadata.productName = eventData.products[0].productName;
+      metadata.productId = eventData.products[0].productId;
+    }
+    if (eventData.productName || eventData.producto) {
+      metadata.productName = eventData.productName || eventData.producto;
+    }
+    if (eventData.productId) metadata.productId = eventData.productId;
+    
+    // Estados - normalizar estadoPedido (evitar duplicado status/estado)
+    if (eventData.newStatus || eventData.status || eventData.estado) {
+      metadata.estadoPedido = eventData.newStatus || eventData.status || eventData.estado;
+    }
+    
+    // Razones de cancelación - normalizar cancellationReason (evitar duplicado motivo)
+    if (eventData.cancellationReason || eventData.motivo) {
+      metadata.cancellationReason = eventData.cancellationReason || eventData.motivo;
+    }
+    
+    // rejectionReason (se renombrará a 'razon' en enrichMetadata para plantilla 8)
+    if (eventData.rejectionReason) metadata.rejectionReason = eventData.rejectionReason;
+    
+    // Pagos - normalizar issueType (evitar duplicado tipo_problema)
+    if (eventData.paymentMethod) metadata.paymentMethod = eventData.paymentMethod;
+    if (eventData.issueType || eventData.tipo_problema) {
+      metadata.issueType = eventData.issueType || eventData.tipo_problema;
+    }
+    
+    // Envíos
+    if (eventData.trackingNumber) metadata.trackingNumber = eventData.trackingNumber;
+    if (eventData.carrier) metadata.carrier = eventData.carrier;
+    if (eventData.estimatedDelivery) metadata.estimatedDelivery = eventData.estimatedDelivery;
+    if (eventData.shippedAt) metadata.shippedAt = eventData.shippedAt;
+    if (eventData.deliveryAddress || eventData.direccion) {
+      metadata.deliveryAddress = eventData.deliveryAddress || eventData.direccion;
+    }
+    if (eventData.buyerPhone || eventData.telefono) {
+      metadata.buyerPhone = eventData.buyerPhone || eventData.telefono;
+    }
+    
+    // Mensajes - normalizar messagePreview (evitar duplicado mensaje)
+    if (eventData.senderName || eventData.remitente) {
+      metadata.senderName = eventData.senderName || eventData.remitente;
+    }
+    if (eventData.messagePreview || eventData.mensaje) {
+      metadata.messagePreview = eventData.messagePreview || eventData.mensaje;
+    }
+    if (eventData.conversationId) metadata.conversationId = eventData.conversationId;
+    
+    // Productos editados (HDU4 - Sprint 4) - normalizar changedFields (evitar duplicado campos)
+    if (eventData.changedFields || eventData.campos) {
+      // Si viene como string separado por comas, convertir a array
+      const fields = eventData.changedFields || eventData.campos;
+      metadata.changedFields = Array.isArray(fields) ? fields : fields.split(',').map(f => f.trim());
+    }
+    if (eventData.oldPrice !== undefined) metadata.oldPrice = eventData.oldPrice;
+    if (eventData.newPrice !== undefined) metadata.newPrice = eventData.newPrice;
+    if (eventData.oldStock !== undefined) metadata.oldStock = eventData.oldStock;
+    if (eventData.newStock !== undefined) metadata.newStock = eventData.newStock;
+    if (eventData.oldDescription) metadata.oldDescription = eventData.oldDescription;
+    if (eventData.newDescription) metadata.newDescription = eventData.newDescription;
+    
+    // Action URL
+    if (metadata.orderId) {
+      metadata.actionUrl = `/orders/${metadata.orderId}`;
+    } else if (metadata.productId) {
+      metadata.actionUrl = `/products/${metadata.productId}`;
+    } else if (metadata.conversationId) {
+      metadata.actionUrl = `/messages/${metadata.conversationId}`;
+    }
+    
+    return metadata;
   }
 
-  // ===== NUEVOS MÉTODOS PARA LA BD ACTUAL =====
-  
-  // Consultar todas las plantillas
+  // Mapeo de eventos a plantillas (deprecated - usar métodos específicos por rol)
+  private mapEventToTemplate(eventType: string): number {
+    const mapping = {
+      'order_created': 1,
+      'order_confirmed': 2, 
+      'order_status_changed': 3,
+      'order_shipped': 4,
+      'order_cancelled': 5,
+      'payment_confirmed': 6,
+      'payment_rejected': 6,
+      'payment_issue': 7,
+    };
+    
+    return mapping[eventType] || 1; // Default a plantilla 1
+  }
+
+  // Mapeo de eventos a plantillas para COMPRADORES
+  private mapEventToTemplateBuyer(eventType: string): number {
+    const mapping = {
+      'order_created': 2,        // Tu pedido fue creado
+      'order_confirmed': 2,      // Tu pedido fue confirmado
+      'order_status_changed': 3, // Estado de tu pedido cambió
+      'order_shipped': 4,        // Tu pedido fue enviado
+      'order_cancelled': 5,      // Tu pedido fue cancelado
+      'payment_confirmed': 7,    // Tu pago fue confirmado
+      'payment_rejected': 8,     // Tu pago fue rechazado
+      'payment_issue': 6,        // Problema con tu pago
+      'message_received': 13,    // Nuevo mensaje (HDU3 - Sprint 4)
+    };
+    
+    return mapping[eventType] || 2; // Default a plantilla 2
+  }
+
+  // Mapeo de eventos a plantillas para VENDEDORES
+  private mapEventToTemplateSeller(eventType: string): number {
+    const mapping = {
+      'order_created': 1,        // Nueva venta creada
+      'order_confirmed': 9,      // Venta confirmada
+      'order_status_changed': 10, // Estado de venta cambió
+      'order_shipped': 11,       // Producto enviado
+      'order_cancelled': 12,     // Venta cancelada
+      'payment_confirmed': 9,    // Pago recibido
+      'payment_rejected': 6,     // Problema con pago de venta
+      'payment_issue': 6,        // Problema con pago de venta
+      'order_ready_to_ship': 12, // Listo para despacho (HDU2 - Sprint 4)
+      'message_received': 13,    // Nuevo mensaje (HDU3 - Sprint 4)
+      'product_edited': 14,      // Producto editado (HDU4 - Sprint 4)
+    };
+    
+    return mapping[eventType] || 1; // Default a plantilla 1 (nueva venta)
+  }
+
+  // Métodos para el controller
   async getAllTemplates() {
-    this.logger.log('🔍 Buscando plantillas en colección: plantillas');
-    const templates = await this.templateModel.find().exec();
-    this.logger.log(`📋 Plantillas encontradas: ${templates.length}`);
-    return templates;
+    return this.templateModel.find().exec();
   }
 
-  // Consultar todos los canales
   async getAllChannels() {
-    return this.channelTypeModel.find().exec();
+    return this.channelModel.find().exec();
   }
 
-  // Consultar todos los tipos de plantillas
   async getAllTemplateTypes() {
     return this.templateTypeModel.find().exec();
   }
 
-  // Crear una nueva notificación
-  async createNotification(data: {
-    id_emisor: number;
-    id_receptor: number;
-    id_plantilla: number;
-    channel_ids: number[];
-  }) {
-    // Generar nuevo ID
-    const lastNotification = await this.notificationModel
-      .findOne()
-      .sort({ id_notificacion: -1 })
-      .exec();
-    
-    const newId = lastNotification ? lastNotification.id_notificacion + 1 : 1;
-
-    const notification = new this.notificationModel({
-      id_notificacion: newId,
-      fecha_hora: new Date(),
-      id_emisor: data.id_emisor,
-      id_receptor: data.id_receptor,
-      id_plantilla: data.id_plantilla,
-      channel_ids: data.channel_ids,
-      estado: 'pendiente'
-    });
-
-    return notification.save();
+  async createNotification(data: any) {
+    return this.createSimpleNotification(data);
   }
 
-  // Consultar notificaciones por usuario (actualizado para nueva BD)
-  async getNotificationsByUserId(userId: number, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
-    
-    return this.notificationModel
-      .find({ id_receptor: userId })
-      .sort({ fecha_hora: -1 })
-      .skip(skip)
-      .limit(limit)
-      .exec();
+  async getNotificationsByUserId(userId: number, page = 1, limit = 20) {
+    return this.getUserNotifications(userId.toString(), limit);
   }
 
-  // Estadísticas básicas de notificaciones
   async getBasicNotificationStats() {
-    const stats = await this.notificationModel.aggregate([
-      {
-        $group: {
-          _id: '$estado',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    return this.getStats();
+  }
 
-    return {
-      byStatus: stats,
-      total: await this.notificationModel.countDocuments()
-    };
+  async getNotificationsByUser(userId: string, page = 1, limit = 20) {
+    return this.getUserNotifications(userId, limit);
+  }
+
+  async getNotificationStats() {
+    return this.getStats();
+  }
+
+  /**
+   * Marcar una notificación como leída usando id_notificacion
+   */
+  async markNotificationAsRead(notificationId: string): Promise<{ success: boolean; message: string; notificationId?: string }> {
+    try {
+      // Convertir a número si es string
+      const id_notificacion = parseInt(notificationId);
+      
+      if (isNaN(id_notificacion)) {
+        return {
+          success: false,
+          message: 'ID de notificación inválido'
+        };
+      }
+
+      const result = await this.notificationModel.findOneAndUpdate(
+        { id_notificacion },
+        { estado: 'leido' },
+        { new: true }
+      ).exec();
+
+      if (!result) {
+        return {
+          success: false,
+          message: 'Notificación no encontrada'
+        };
+      }
+
+      this.logger.log(`Notification ${id_notificacion} marked as read`);
+      return {
+        success: true,
+        message: 'Notificación marcada como leída',
+        notificationId: notificationId
+      };
+    } catch (error) {
+      this.logger.error(`Error marking notification as read:`, error);
+      return {
+        success: false,
+        message: 'Error al marcar la notificación como leída'
+      };
+    }
+  }
+
+  /**
+   * Marcar múltiples notificaciones como leídas usando id_notificacion
+   */
+  async markMultipleNotificationsAsRead(notificationIds: string[]): Promise<{ success: boolean; message: string; updated: number }> {
+    try {
+      // Convertir todos los IDs a números
+      const ids = notificationIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+      
+      if (ids.length === 0) {
+        return {
+          success: false,
+          message: 'No se proporcionaron IDs válidos',
+          updated: 0
+        };
+      }
+
+      const result = await this.notificationModel.updateMany(
+        { id_notificacion: { $in: ids } },
+        { estado: 'leido' }
+      ).exec();
+
+      this.logger.log(`${result.modifiedCount} notifications marked as read`);
+      return {
+        success: true,
+        message: `${result.modifiedCount} notificaciones marcadas como leídas`,
+        updated: result.modifiedCount
+      };
+    } catch (error) {
+      this.logger.error(`Error marking multiple notifications as read:`, error);
+      return {
+        success: false,
+        message: 'Error al marcar las notificaciones como leídas',
+        updated: 0
+      };
+    }
+  }
+
+  async retryFailedNotifications() {
+    const failedNotifications = await this.notificationModel
+      .find({ estado: 'fallido' })
+      .limit(10)
+      .exec();
+
+    for (const notification of failedNotifications) {
+      try {
+        await this.sendNotification(notification._id.toString());
+      } catch (error) {
+        this.logger.error(`Failed to retry notification ${notification._id}:`, error);
+      }
+    }
+
+    return { retriedCount: failedNotifications.length };
   }
 }
