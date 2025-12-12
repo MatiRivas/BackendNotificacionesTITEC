@@ -6,7 +6,7 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:3000/api/notifications';
+const API_BASE_URL = 'http://localhost:4500/api/notifications';
 
 // IDs de usuarios de prueba
 const TEST_USERS = {
